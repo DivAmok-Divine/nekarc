@@ -14,6 +14,7 @@ interface AuthCtx {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, fullName: string) => Promise<void>;
   logout: () => void;
+  updateUser: (patch: Partial<User>) => void;
 }
 
 const Ctx = createContext<AuthCtx>(null as unknown as AuthCtx);
@@ -67,8 +68,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
+  function updateUser(patch: Partial<User>) {
+    setUser((u) => (u ? { ...u, ...patch } : u));
+  }
+
   return (
-    <Ctx.Provider value={{ user, loading, login, register, logout }}>
+    <Ctx.Provider value={{ user, loading, login, register, logout, updateUser }}>
       {children}
     </Ctx.Provider>
   );

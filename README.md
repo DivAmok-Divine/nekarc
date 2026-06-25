@@ -58,8 +58,8 @@ a non-expert gets a credible, standards-backed design (IEEE 802.11ax · TIA-568-
 ./stop.sh      # stops them
 ```
 
-- Frontend → http://localhost:5173
-- API docs → http://localhost:8000/docs
+- Frontend → http://localhost:2222
+- API docs → http://localhost:3333/docs
 
 Then register an account and create your first building.
 

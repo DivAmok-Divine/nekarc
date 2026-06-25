@@ -1,20 +1,20 @@
 import { useState } from "react";
 import { apiBlob } from "../../api/client";
+import Icon from "../../components/Icon";
 import type { Design, Project } from "../../engine/types";
 import Diagram from "./Diagram";
 import FloorPlan from "./FloorPlan";
 
-const TABS = ["diagram", "floorplan", "bom", "ip", "vlans", "summary", "refs"] as const;
-type Tab = (typeof TABS)[number];
-const LABELS: Record<Tab, string> = {
-  diagram: "🗺 Diagram",
-  floorplan: "📐 Floor Plan",
-  bom: "📦 Equipment",
-  ip: "🌐 IP Plan",
-  vlans: "🔀 VLANs",
-  summary: "📊 Summary",
-  refs: "📚 References",
-};
+type Tab = "diagram" | "floorplan" | "bom" | "ip" | "vlans" | "summary" | "refs";
+const TABS: { key: Tab; icon: string; label: string }[] = [
+  { key: "diagram", icon: "map", label: "Diagram" },
+  { key: "floorplan", icon: "layout", label: "Floor Plan" },
+  { key: "bom", icon: "box", label: "Equipment" },
+  { key: "ip", icon: "globe", label: "IP Plan" },
+  { key: "vlans", icon: "shuffle", label: "VLANs" },
+  { key: "summary", icon: "bar-chart", label: "Summary" },
+  { key: "refs", icon: "book", label: "References" },
+];
 
 export default function ResultsView({
   project,
@@ -79,13 +79,13 @@ export default function ResultsView({
 
       <div className="tabs">
         {TABS.map((t) => (
-          <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
-            {LABELS[t]}
+          <button key={t.key} className={`tab ${tab === t.key ? "active" : ""}`} onClick={() => setTab(t.key)}>
+            <Icon name={t.icon} size={15} /> {t.label}
           </button>
         ))}
         <div className="spacer" />
         <button className="btn btn-green btn-sm" onClick={exportPdf} disabled={exporting}>
-          {exporting ? "…" : "⬇ Export PDF"}
+          <Icon name="download" size={15} /> {exporting ? "…" : "Export PDF"}
         </button>
       </div>
 
@@ -139,7 +139,7 @@ function Ip({ design }: { design: Design }) {
         ];
         return (
           <div className="card" key={f.id}>
-            <div style={{ fontWeight: 700, marginBottom: 12 }}>🏢 {f.name}</div>
+            <div className="card-title"><Icon name="building" size={15} /> {f.name}</div>
             <table>
               <thead>
                 <tr><th>VLAN</th><th>Segment</th><th>Subnet</th><th>Gateway</th><th>Usable Range</th></tr>
@@ -174,7 +174,7 @@ function Vlans({ design }: { design: Design }) {
         {design.vlans.map((v) => (
           <div className="card" key={v.id} style={{ borderLeft: `3px solid ${v.color}` }}>
             <div className="row" style={{ gap: 10, marginBottom: 8 }}>
-              <span style={{ background: `${v.color}22`, color: v.color, padding: "2px 10px", borderRadius: 20, fontWeight: 800, fontSize: 13 }}>VLAN {v.id}</span>
+              <span style={{ background: `${v.color}22`, color: v.color, padding: "2px 10px", borderRadius: 6, fontWeight: 800, fontSize: 13 }}>VLAN {v.id}</span>
               <span style={{ fontWeight: 600 }}>{v.name}</span>
             </div>
             <p className="muted" style={{ fontSize: 13, marginBottom: 8 }}>{v.desc}</p>
@@ -190,32 +190,35 @@ function Summary({ design }: { design: Design }) {
   return (
     <div>
       <div className="section-h">Floor-by-Floor Summary</div>
-      {design.floors.map((f) => (
-        <div className="card" key={f.id}>
-          <div style={{ fontWeight: 700, marginBottom: 12, fontSize: 15 }}>🏢 {f.name}</div>
-          <div className="mini-grid">
-            {[
-              ["💻 Workstations", f.ws],
-              ["📶 WiFi Devices", f.wifi],
-              ["🖨️ Printers", f.pr],
-              ["📷 Cameras", f.cam],
-              ["🖥️ Servers", f.srv],
-              ["📶 APs", f.aps],
-              ["🔌 Switch", `${f.switchSize}p`],
-              ["🔌 Ports", f.portsWithHeadroom],
-            ].map(([l, v]) => (
-              <div className="stat" key={String(l)}>
-                <div className="stat-label">{l}</div>
-                <div className="stat-value" style={{ fontSize: 17 }}>{v}</div>
-              </div>
-            ))}
+      {design.floors.map((f) => {
+        const items: [string, string, string | number][] = [
+          ["monitor", "Workstations", f.ws],
+          ["wifi", "WiFi Devices", f.wifi],
+          ["printer", "Printers", f.pr],
+          ["camera", "Cameras", f.cam],
+          ["server", "Servers", f.srv],
+          ["wifi", "APs", f.aps],
+          ["switch", "Switch", `${f.switchSize}p`],
+          ["switch", "Ports", f.portsWithHeadroom],
+        ];
+        return (
+          <div className="card" key={f.id}>
+            <div className="card-title"><Icon name="building" size={15} /> {f.name}</div>
+            <div className="mini-grid">
+              {items.map(([ic, label, v], i) => (
+                <div className="stat" key={i}>
+                  <div className="stat-label"><Icon name={ic} size={12} /> {label}</div>
+                  <div className="stat-value" style={{ fontSize: 17 }}>{v}</div>
+                </div>
+              ))}
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+              {f.needsPoE && <span className="badge badge-amber" style={{ marginRight: 8 }}>PoE Required</span>}
+              Staff subnet: <span className="mono">{f.subnets.staff}</span>
+            </div>
           </div>
-          <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-            {f.needsPoE && <span className="badge badge-amber" style={{ marginRight: 8 }}>PoE Required</span>}
-            Staff subnet: <span className="mono">{f.subnets.staff}</span>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

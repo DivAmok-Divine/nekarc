@@ -30,8 +30,8 @@ export default function Brand({ size = 26 }: { size?: number }) {
           <circle cx="100" cy="46" r="6" />
         </g>
       </svg>
-      <span style={{ fontSize: size * 0.7, fontWeight: 800, letterSpacing: "-0.5px", color: "#fff" }}>
-        nek<span style={{ color: "#60a5fa" }}>arc</span>
+      <span style={{ fontSize: size * 0.7, fontWeight: 800, letterSpacing: "-0.5px", color: "var(--text)" }}>
+        nek<span style={{ color: "var(--accent2)" }}>arc</span>
       </span>
     </span>
   );

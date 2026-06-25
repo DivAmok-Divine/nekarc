@@ -23,3 +23,11 @@ def init_db() -> None:
 
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     Base.metadata.create_all(bind=engine)
+
+    # Lightweight migration for existing SQLite DBs (until Alembic lands):
+    # add new columns that create_all won't add to an already-existing table.
+    if settings.DATABASE_URL.startswith("sqlite"):
+        with engine.begin() as conn:
+            cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(users)")]
+            if "theme" not in cols:
+                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN theme VARCHAR(10) DEFAULT 'system'")

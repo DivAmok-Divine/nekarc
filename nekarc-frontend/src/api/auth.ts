@@ -10,6 +10,7 @@ export interface User {
   id: number;
   email: string;
   full_name: string;
+  theme?: "system" | "light" | "dark";
 }
 
 export const authApi = {
@@ -28,6 +29,15 @@ export const authApi = {
     }),
 
   me: () => api<User>("/users/me"),
+
+  updateMe: (patch: { theme?: string; full_name?: string }) =>
+    api<User>("/users/me", { method: "PATCH", body: JSON.stringify(patch) }),
+
+  changePassword: (current_password: string, new_password: string) =>
+    api("/users/me/password", {
+      method: "POST",
+      body: JSON.stringify({ current_password, new_password }),
+    }),
 
   forgotPassword: (email: string) =>
     api("/auth/forgot-password", {

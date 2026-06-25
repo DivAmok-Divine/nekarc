@@ -10,6 +10,11 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [notice] = useState(() => {
+    const n = sessionStorage.getItem("nekarc_notice");
+    if (n) sessionStorage.removeItem("nekarc_notice");
+    return n;
+  });
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -27,6 +32,7 @@ export default function Login() {
 
   return (
     <AuthShell title="Sign in" subtitle="Welcome back to nekarc.">
+      {notice && <div className="form-ok" style={{ marginBottom: 14 }}>{notice}</div>}
       <form onSubmit={submit}>
         <label>Email</label>
         <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />

@@ -1,13 +1,13 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Dev server proxies /api -> FastAPI on :8000 so the frontend can use relative URLs.
+// Dev server proxies /api -> FastAPI on :3333 so the frontend can use relative URLs.
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5173,
+    port: 2222,
     proxy: {
-      "/api": "http://localhost:8000",
+      "/api": "http://localhost:3333",
     },
   },
 });

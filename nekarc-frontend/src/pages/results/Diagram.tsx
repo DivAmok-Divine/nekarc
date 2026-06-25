@@ -1,3 +1,4 @@
+import { ICONS } from "../../components/Icon";
 import type { Design } from "../../engine/types";
 
 /**
@@ -18,30 +19,28 @@ export default function Diagram({ design, projectName }: { design: Design; proje
 
   const router = { x: cx - NW / 2, y: 16 };
   const core = { x: cx - NW / 2, y: 104 };
-  nodes.push({ ...router, w: NW, label: "Router / Firewall", icon: "🔒", color: "#ef4444" });
-  nodes.push({ ...core, w: NW, label: "Core Switch (L3)", icon: "🔀", color: "#6366f1" });
+  nodes.push({ ...router, w: NW, label: "Router / Firewall", icon: "shield", color: "#ef4444" });
+  nodes.push({ ...core, w: NW, label: "Core Switch (L3)", icon: "switch", color: "#6366f1" });
   edges.push({ x1: cx, y1: router.y + NH, x2: cx, y2: core.y, color: "#6366f1" });
 
   design.floors.forEach((f, i) => {
-    const fx = 40 + i * colW + (colW - NW) / 2 - 40 + 40;
     const sx = 40 + i * colW;
     const swX = sx + (colW - NW) / 2;
     const swY = 210;
-    nodes.push({ x: swX, y: swY, w: NW, label: `${f.name} Switch`, icon: "🔌", color: "#3b82f6", detail: `${f.switchSize}p PoE · ${f.subnets.staff}` });
+    nodes.push({ x: swX, y: swY, w: NW, label: `${f.name} Switch`, icon: "switch", color: "#3b82f6", detail: `${f.switchSize}p PoE · ${f.subnets.staff}` });
     edges.push({ x1: cx, y1: core.y + NH, x2: swX + NW / 2, y2: swY, color: "#3b82f6" });
 
     const endpoints: Node[] = [];
-    endpoints.push({ x: swX, y: 0, w: NW, label: `${f.aps}× WiFi 6 AP`, icon: "📶", color: "#22d3ee" });
-    if (f.ws > 0) endpoints.push({ x: swX, y: 0, w: NW, label: `${f.ws} Workstations`, icon: "💻", color: "#10b981" });
-    if (f.pr > 0) endpoints.push({ x: swX, y: 0, w: NW, label: `${f.pr} Printer${f.pr > 1 ? "s" : ""}`, icon: "🖨️", color: "#8b5cf6" });
-    if (f.cam > 0) endpoints.push({ x: swX, y: 0, w: NW, label: `${f.cam} Camera${f.cam > 1 ? "s" : ""}`, icon: "📷", color: "#f59e0b" });
+    endpoints.push({ x: swX, y: 0, w: NW, label: `${f.aps}× WiFi 6 AP`, icon: "wifi", color: "#22d3ee" });
+    if (f.ws > 0) endpoints.push({ x: swX, y: 0, w: NW, label: `${f.ws} Workstations`, icon: "monitor", color: "#10b981" });
+    if (f.pr > 0) endpoints.push({ x: swX, y: 0, w: NW, label: `${f.pr} Printer${f.pr > 1 ? "s" : ""}`, icon: "printer", color: "#8b5cf6" });
+    if (f.cam > 0) endpoints.push({ x: swX, y: 0, w: NW, label: `${f.cam} Camera${f.cam > 1 ? "s" : ""}`, icon: "camera", color: "#f59e0b" });
 
     endpoints.forEach((ep, ei) => {
       ep.y = 300 + ei * 62;
       nodes.push(ep);
       edges.push({ x1: swX + NW / 2, y1: swY + NH, x2: ep.x + NW / 2, y2: ep.y, color: ep.color, dash: ei === 0 });
     });
-    void fx;
   });
 
   return (
@@ -54,10 +53,12 @@ export default function Diagram({ design, projectName }: { design: Design; proje
           ))}
           {nodes.map((n, i) => (
             <g key={i} transform={`translate(${n.x},${n.y})`}>
-              <rect width={n.w} height={NH} rx={8} fill="#131e30" stroke={n.color} strokeWidth={1.5} />
-              <text x={12} y={20} fontSize={14}>{n.icon}</text>
-              <text x={34} y={20} fontSize={11} fontWeight={700} fill="#e2e8f0">{n.label}</text>
-              {n.detail && <text x={12} y={36} fontSize={9} fill="#64748b">{n.detail.slice(0, 30)}</text>}
+              <rect width={n.w} height={NH} rx={6} fill="#131e30" stroke={n.color} strokeWidth={1.5} />
+              <svg x={12} y={n.detail ? 8 : NH / 2 - 8} width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={n.color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                {ICONS[n.icon]}
+              </svg>
+              <text x={36} y={n.detail ? 19 : NH / 2 + 4} fontSize={11} fontWeight={700} fill="#e2e8f0">{n.label}</text>
+              {n.detail && <text x={36} y={34} fontSize={9} fill="#64748b">{n.detail.slice(0, 26)}</text>}
             </g>
           ))}
         </svg>

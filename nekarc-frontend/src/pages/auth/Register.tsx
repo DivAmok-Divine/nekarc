@@ -34,7 +34,7 @@ export default function Register() {
     <AuthShell title="Create account" subtitle="Start designing networks in minutes.">
       <form onSubmit={submit}>
         <label>Full name</label>
-        <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jane Doe" />
+        <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Enter your full name" />
         <label>Email</label>
         <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />
         <label>Password</label>
