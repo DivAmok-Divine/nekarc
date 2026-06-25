@@ -1,0 +1,30 @@
+# ── secrets / env ───────────────────────────────
+.git-push.env
+.env
+**/.env
+*.local
+
+# ── python ──────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# ── database & uploads (kept out of git) ────────
+nekarc-backend-api/data/app.db
+nekarc-backend-api/data/app.db-journal
+nekarc-backend-api/data/uploads/*
+!nekarc-backend-api/data/uploads/.gitkeep
+
+# ── node / vite ─────────────────────────────────
+node_modules/
+nekarc-frontend/dist/
+nekarc-frontend/.vite/
+
+# ── runtime / logs ──────────────────────────────
+.run/
+*.log
+
+# ── os ──────────────────────────────────────────
+.DS_Store
