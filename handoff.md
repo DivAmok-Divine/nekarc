@@ -21,8 +21,8 @@ The core is one pure function, `calcNetwork()`, that applies network-engineering
 ./start.sh        # venv + npm install + both servers
 ./stop.sh
 ```
-Frontend http://localhost:5173 · API docs http://localhost:8000/docs · logs in `.run/`.
-Dev proxy: Vite forwards `/api/*` → `:8000` (see `nekarc-frontend/vite.config.ts`).
+Frontend http://localhost:2222 · API docs http://localhost:3333/docs · logs in `.run/`.
+Dev proxy: Vite forwards `/api/*` → `:3333` (see `nekarc-frontend/vite.config.ts`).
 
 ## Verified working (smoke-tested)
 - Backend imports, boots, `create_all` builds tables.

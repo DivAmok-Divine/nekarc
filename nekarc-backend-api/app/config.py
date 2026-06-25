@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./data/uploads"
 
     # ── CORS / URLs ───────────────────────────────────
-    CORS_ORIGINS: str = "http://localhost:5173"
-    FRONTEND_URL: str = "http://localhost:5173"
+    CORS_ORIGINS: str = "http://localhost:2222"
+    FRONTEND_URL: str = "http://localhost:2222"
 
     # ── SMTP (optional; reset links log to console if unset) ──
     SMTP_HOST: Optional[str] = None

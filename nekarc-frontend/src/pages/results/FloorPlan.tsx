@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { apiUpload } from "../../api/client";
+import Icon from "../../components/Icon";
 import type { Project } from "../../engine/types";
 
 /**
@@ -18,7 +19,7 @@ export default function FloorPlan({ project, projectId }: { project: Project; pr
     setStatus("");
     try {
       const asset: any = await apiUpload(`/projects/${projectId}/uploads`, file);
-      setStatus(`Uploaded “${asset.filename}” (${asset.kind.toUpperCase()}). ` + (asset.kind === "dxf" ? "Ready for CAD parsing." : "Ready to trace rooms."));
+      setStatus(`Uploaded "${asset.filename}" (${asset.kind.toUpperCase()}). ` + (asset.kind === "dxf" ? "Ready for CAD parsing." : "Ready to trace rooms."));
     } catch (ex: any) {
       setStatus(`Upload failed: ${ex.message}`);
     } finally {
@@ -39,23 +40,23 @@ export default function FloorPlan({ project, projectId }: { project: Project; pr
         </p>
         <div className="plan-paths">
           <div className="plan-path">
-            <div className="plan-path-h">🏗️ CAD auto-read</div>
+            <div className="plan-path-h"><Icon name="layout" size={15} /> CAD auto-read</div>
             <div className="muted">Upload a <strong>DXF</strong>; the server detects rooms and dimensions automatically.</div>
           </div>
           <div className="plan-path">
-            <div className="plan-path-h">🖼️ PNG / JPG trace</div>
+            <div className="plan-path-h"><Icon name="image" size={15} /> PNG / JPG trace</div>
             <div className="muted">Upload an image, then trace room boxes onto it. Works with any plan.</div>
           </div>
         </div>
         <label className="upload-btn">
           <input type="file" accept=".png,.jpg,.jpeg,.dxf" onChange={onFile} disabled={busy} hidden />
-          {busy ? "Uploading…" : "⬆ Upload plan (PNG, JPG, or DXF)"}
+          <Icon name="upload" size={15} /> {busy ? "Uploading…" : "Upload plan (PNG, JPG, or DXF)"}
         </label>
         {status && <div className="form-ok" style={{ marginTop: 12 }}>{status}</div>}
       </div>
 
       <div className="card">
-        <div className="row-between">
+        <div className="row-between" style={{ marginBottom: 0 }}>
           <div style={{ fontWeight: 700 }}>Room geometry</div>
           <span className="badge badge-blue">{traced}/{totalRooms} rooms traced</span>
         </div>
