@@ -50,6 +50,7 @@ def _normalize(result: dict) -> dict:
         "ok": bool(result.get("ok", True)),
         "source": result.get("source", "unknown"),
         "floors": floors,
+        "building_name": _nice_name(str(result.get("building_name") or ""), ""),
         "warnings": result.get("warnings") or [],
         "error": result.get("error"),
     }

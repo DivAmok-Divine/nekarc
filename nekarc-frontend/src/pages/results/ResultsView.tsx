@@ -61,7 +61,7 @@ export default function ResultsView({
     ["Floors", design.floors.length],
     ["Devices", design.totalDev],
     ["Access Points", design.totalAPs],
-    ["Switches", design.switchTotal + 1],
+    ["Switches", design.switchTotal + (design.totalDev > 0 ? 1 : 0)],
     ["VLANs", design.vlans.length],
     ["BOM Items", design.bom.length],
   ];
@@ -103,6 +103,14 @@ export default function ResultsView({
 }
 
 function Bom({ design }: { design: Design }) {
+  if (design.bom.length === 0) {
+    return (
+      <div>
+        <div className="section-h">Bill of Materials</div>
+        <p className="muted">No equipment yet — add devices to build the bill of materials.</p>
+      </div>
+    );
+  }
   return (
     <div>
       <div className="section-h">Bill of Materials</div>
@@ -126,18 +134,26 @@ function Bom({ design }: { design: Design }) {
 }
 
 function Ip({ design }: { design: Design }) {
+  const floors = design.floors
+    .map((f) => ({
+      f,
+      rows: [
+        { vlan: 10, name: "Staff", sub: f.subnets.staff },
+        { vlan: 20, name: "Guest", sub: f.subnets.guest },
+        { vlan: 30, name: "Printers", sub: f.subnets.printers },
+        { vlan: 40, name: "Servers", sub: f.subnets.servers },
+        { vlan: 50, name: "Cameras", sub: f.subnets.cameras },
+      ].filter((r): r is { vlan: number; name: string; sub: string } => !!r.sub),
+    }))
+    .filter((x) => x.rows.length > 0);
+
   return (
     <div>
       <div className="section-h">IP Plan — RFC 1918 · /24 per VLAN per floor</div>
-      {design.floors.map((f) => {
-        const rows = [
-          { vlan: 10, name: "Staff", sub: f.subnets.staff },
-          { vlan: 20, name: "Guest", sub: f.subnets.guest },
-          { vlan: 30, name: "Printers", sub: f.subnets.printers },
-          ...(f.subnets.servers ? [{ vlan: 40, name: "Servers", sub: f.subnets.servers }] : []),
-          ...(f.subnets.cameras ? [{ vlan: 50, name: "Cameras", sub: f.subnets.cameras }] : []),
-        ];
-        return (
+      {floors.length === 0 ? (
+        <p className="muted">No devices yet — add some to generate the IP plan.</p>
+      ) : (
+        floors.map(({ f, rows }) => (
           <div className="card" key={f.id}>
             <div className="card-title"><Icon name="building" size={15} /> {f.name}</div>
             <table>
@@ -160,13 +176,21 @@ function Ip({ design }: { design: Design }) {
               </tbody>
             </table>
           </div>
-        );
-      })}
+        ))
+      )}
     </div>
   );
 }
 
 function Vlans({ design }: { design: Design }) {
+  if (design.vlans.length === 0) {
+    return (
+      <div>
+        <div className="section-h">VLAN Segmentation Plan</div>
+        <p className="muted">No devices yet — add some to define the VLAN segments.</p>
+      </div>
+    );
+  }
   return (
     <div>
       <div className="section-h">VLAN Segmentation Plan</div>
@@ -191,6 +215,7 @@ function Summary({ design }: { design: Design }) {
     <div>
       <div className="section-h">Floor-by-Floor Summary</div>
       {design.floors.map((f) => {
+        const primary = f.subnets.staff || f.subnets.guest || f.subnets.printers || f.subnets.servers || f.subnets.cameras;
         const items: [string, string, string | number][] = [
           ["monitor", "Workstations", f.ws],
           ["wifi", "WiFi Devices", f.wifi],
@@ -198,7 +223,7 @@ function Summary({ design }: { design: Design }) {
           ["camera", "Cameras", f.cam],
           ["server", "Servers", f.srv],
           ["wifi", "APs", f.aps],
-          ["switch", "Switch", `${f.switchSize}p`],
+          ["switch", "Switch", f.switchCount > 0 ? `${f.switchSize}p` : "—"],
           ["switch", "Ports", f.portsWithHeadroom],
         ];
         return (
@@ -214,7 +239,7 @@ function Summary({ design }: { design: Design }) {
             </div>
             <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
               {f.needsPoE && <span className="badge badge-amber" style={{ marginRight: 8 }}>PoE Required</span>}
-              Staff subnet: <span className="mono">{f.subnets.staff}</span>
+              {primary ? <>Primary subnet: <span className="mono">{primary}</span></> : "No network devices on this floor."}
             </div>
           </div>
         );

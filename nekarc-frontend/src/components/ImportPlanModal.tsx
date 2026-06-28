@@ -18,6 +18,7 @@ export interface ImportResult {
   ok: boolean;
   source: string;
   floors: ImportFloor[];
+  building_name?: string;
   warnings?: string[];
   error?: string | null;
 }
