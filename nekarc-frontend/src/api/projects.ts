@@ -1,10 +1,13 @@
-import { api } from "./client";
+import { api, apiUpload } from "./client";
 
 export interface ProjectSummary {
   id: number;
   name: string;
   created_at: string;
   updated_at: string;
+  floor_count: number;
+  room_count: number;
+  device_count: number;
 }
 
 export const projectsApi = {
@@ -16,4 +19,5 @@ export const projectsApi = {
     api(`/projects/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   remove: (id: number | string) =>
     api(`/projects/${id}`, { method: "DELETE" }),
+  importPlan: (file: File) => apiUpload(`/import`, file),
 };

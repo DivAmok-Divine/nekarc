@@ -6,12 +6,18 @@ import UserMenu from "../components/UserMenu";
 import Icon from "../components/Icon";
 import { useConfirm } from "../components/confirm";
 
+// Backend stores naive UTC — append Z so it converts to local time correctly.
+const toLocal = (iso: string) => new Date(iso.endsWith("Z") ? iso : iso + "Z");
+const fmtDateTime = (iso: string) =>
+  toLocal(iso).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const fmtDate = (iso: string) =>
+  toLocal(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+
 export default function Dashboard() {
   const nav = useNavigate();
   const confirm = useConfirm();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
 
   async function load() {
     setProjects(await projectsApi.list());
@@ -21,23 +27,9 @@ export default function Dashboard() {
     load();
   }, []);
 
-  async function createProject() {
-    setCreating(true);
-    try {
-      const p: any = await projectsApi.create({
-        name: "New Building",
-        floors: [
-          {
-            name: "Floor 1",
-            order_index: 0,
-            rooms: [{ name: "Room 1", workstations: 0, wifi_devices: 0, printers: 0, cameras: 0, servers: 0 }],
-          },
-        ],
-      });
-      nav(`/projects/${p.id}`);
-    } finally {
-      setCreating(false);
-    }
+  // Don't create anything yet — open a draft. It's persisted on first Save/Generate.
+  function createProject() {
+    nav("/projects/new");
   }
 
   async function del(e: React.MouseEvent, p: ProjectSummary) {
@@ -66,9 +58,9 @@ export default function Dashboard() {
       ) : projects.length === 0 ? (
         <main className="container container-center">
           <div className="empty">
-            <Brand size={42} />
-            <p className="muted" style={{ marginTop: 14 }}>No projects yet. Create your first building.</p>
-            <button className="btn btn-primary" onClick={createProject} disabled={creating}><Icon name="plus" size={16} /> New project</button>
+            <Brand size={46} />
+            <p className="muted">No projects yet. Create your first building.</p>
+            <button className="btn btn-primary" onClick={createProject}><Icon name="plus" size={16} /> New project</button>
           </div>
         </main>
       ) : (
@@ -78,15 +70,24 @@ export default function Dashboard() {
               <h1 className="h1">Your projects</h1>
               <p className="muted">Each project is a building you design a network for.</p>
             </div>
-            <button className="btn btn-primary" onClick={createProject} disabled={creating}><Icon name="plus" size={16} /> New project</button>
+            <button className="btn btn-primary" onClick={createProject}><Icon name="plus" size={16} /> New project</button>
           </div>
           <div className="proj-grid">
             {projects.map((p) => (
               <div key={p.id} className="proj-card" onClick={() => nav(`/projects/${p.id}`)}>
                 <button className="proj-del" onClick={(e) => del(e, p)} title="Delete"><Icon name="x" size={14} /></button>
-                <div className="proj-name">{p.name}</div>
-                <div className="muted" style={{ fontSize: 12 }}>
-                  Updated {new Date(p.updated_at).toLocaleDateString()}
+                <div className="proj-card-head">
+                  <span className="proj-icon"><Icon name="building" size={18} /></span>
+                  <div className="proj-name">{p.name}</div>
+                </div>
+                <div className="proj-stats">
+                  <span className="proj-stat"><b>{p.floor_count}</b> floor{p.floor_count !== 1 ? "s" : ""}</span>
+                  <span className="proj-stat"><b>{p.room_count}</b> room{p.room_count !== 1 ? "s" : ""}</span>
+                  <span className="proj-stat"><b>{p.device_count}</b> device{p.device_count !== 1 ? "s" : ""}</span>
+                </div>
+                <div className="proj-meta">
+                  <div>Updated {fmtDateTime(p.updated_at)}</div>
+                  <div>Created {fmtDate(p.created_at)}</div>
                 </div>
               </div>
             ))}

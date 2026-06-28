@@ -1,11 +1,13 @@
+import { PALETTE } from "../theme/colors";
+
 export default function Brand({ size = 26 }: { size?: number }) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
       <svg width={size} height={size} viewBox="0 0 128 128" fill="none" aria-hidden>
         <defs>
           <linearGradient id="bgrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#3b82f6" />
-            <stop offset="1" stopColor="#22d3ee" />
+            <stop offset="0" stopColor={PALETTE.blue} />
+            <stop offset="1" stopColor={PALETTE.cyan} />
           </linearGradient>
         </defs>
         <rect x="8" y="8" width="112" height="112" rx="30" fill="#0b1120" stroke="url(#bgrad)" strokeWidth="3" />

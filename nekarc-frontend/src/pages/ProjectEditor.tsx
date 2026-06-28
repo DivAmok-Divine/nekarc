@@ -7,17 +7,41 @@ import ResultsView from "./results/ResultsView";
 import UserMenu from "../components/UserMenu";
 import Icon from "../components/Icon";
 import { useConfirm } from "../components/confirm";
+import ImportPlanModal, { type ImportFloor, type ImportResult } from "../components/ImportPlanModal";
+import { ROLE_COLORS } from "../theme/colors";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const newRoom = (n: number): Room => ({
   id: uid(), name: `Room ${n}`, workstations: 0, wifi_devices: 0, printers: 0, cameras: 0, servers: 0,
 });
 const newFloor = (n: number): Floor => ({ id: uid(), name: `Floor ${n}`, order_index: n - 1, rooms: [newRoom(1)] });
+const freshProject = (): Project => ({ name: "New Building", floors: [newFloor(1)] });
+
+function importedToFloors(floors: ImportFloor[]): Floor[] {
+  return floors.map((f, fi) => ({
+    id: uid(),
+    name: f.name || `Floor ${fi + 1}`,
+    order_index: fi,
+    rooms: (f.rooms || []).map((r, ri) => ({
+      id: uid(),
+      name: r.name || `Room ${ri + 1}`,
+      workstations: r.workstations || 0,
+      wifi_devices: r.wifi_devices || 0,
+      printers: r.printers || 0,
+      cameras: r.cameras || 0,
+      servers: r.servers || 0,
+      area_m2: r.area_m2 ?? null,
+      polygon_json: null,
+    })),
+  }));
+}
 
 const roomTotal = (r: Room) => r.workstations + r.wifi_devices + r.printers + r.cameras + r.servers;
 const roomHasData = (r: Room) => roomTotal(r) > 0;
 
-/** Returns the list of issues blocking a valid design (empty = good to generate). */
+/** Returns the list of issues that hard-block a design (empty = good to generate).
+ *  Device-less rooms and even a device-less building are allowed — generating with
+ *  zero devices just asks for confirmation (see the Generate handler). */
 function validate(p: Project): string[] {
   const issues: string[] = [];
   if (!p.name.trim()) issues.push("Give the project a name.");
@@ -25,7 +49,6 @@ function validate(p: Project): string[] {
     if (!f.name.trim()) issues.push("Every floor needs a name.");
     f.rooms.forEach((r) => {
       if (!r.name.trim()) issues.push(`${f.name || "A floor"}: a room needs a name.`);
-      if (roomTotal(r) === 0) issues.push(`${f.name || "Floor"} · ${r.name || "room"}: add at least one device.`);
     });
   });
   return [...new Set(issues)];
@@ -76,26 +99,43 @@ function toPayload(p: Project) {
 
 // [key, icon name, label, role color] — colors match the VLAN segments in the design output.
 const FIELDS: [keyof Room, string, string, string][] = [
-  ["workstations", "monitor", "Workstations", "#3b82f6"],
-  ["wifi_devices", "wifi", "WiFi devices", "#f59e0b"],
-  ["printers", "printer", "Printers", "#8b5cf6"],
-  ["cameras", "camera", "IP cameras", "#ef4444"],
-  ["servers", "server", "Servers", "#10b981"],
+  ["workstations", "monitor", "Workstations", ROLE_COLORS.workstations],
+  ["wifi_devices", "wifi", "WiFi devices", ROLE_COLORS.wifi_devices],
+  ["printers", "printer", "Printers", ROLE_COLORS.printers],
+  ["cameras", "camera", "IP cameras", ROLE_COLORS.cameras],
+  ["servers", "server", "Servers", ROLE_COLORS.servers],
 ];
 
 export default function ProjectEditor() {
   const { id } = useParams();
   const nav = useNavigate();
   const confirm = useConfirm();
-  const [project, setProject] = useState<Project | null>(null);
+  const [project, setProject] = useState<Project | null>(() => (id === "new" ? freshProject() : null));
+  const [savedId, setSavedId] = useState<string | null>(id && id !== "new" ? id : null);
+  const skipFetch = useRef(false);
+  const creatingRef = useRef(false);
   const [activeFloor, setActiveFloor] = useState(0);
   const [saving, setSaving] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [toast, setToast] = useState("");
   const floorNameRef = useRef<HTMLInputElement>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const lastImportFile = useRef<File | null>(null);
 
   useEffect(() => {
-    (async () => setProject(fromServer(await projectsApi.get(id!))))();
+    if (id === "new") return; // unsaved draft already in state
+    if (skipFetch.current) {
+      // we just created this project — don't refetch and clobber state
+      skipFetch.current = false;
+      setSavedId(id ?? null);
+      return;
+    }
+    (async () => {
+      setProject(fromServer(await projectsApi.get(id!)));
+      setSavedId(id ?? null);
+    })();
   }, [id]);
 
   const design = useMemo(() => (project ? calcNetwork(project) : null), [project]);
@@ -115,10 +155,29 @@ export default function ProjectEditor() {
     setTimeout(() => setToast(""), 2000);
   }
 
+  // Create on first persist, update thereafter. A draft (id === "new") only
+  // hits the DB once the user actually saves or generates.
+  async function persist(next: Project) {
+    if (savedId) {
+      await projectsApi.update(savedId, toPayload(next));
+      return;
+    }
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    try {
+      const created: any = await projectsApi.create(toPayload(next));
+      skipFetch.current = true;
+      setSavedId(String(created.id));
+      nav(`/projects/${created.id}`, { replace: true });
+    } finally {
+      creatingRef.current = false;
+    }
+  }
+
   async function save() {
     setSaving(true);
     try {
-      await projectsApi.update(id!, toPayload(project!));
+      await persist(project!);
       showToast("Saved");
     } catch {
       showToast("Save failed");
@@ -179,6 +238,56 @@ export default function ProjectEditor() {
     update((p) => p.floors[activeFloor].rooms.splice(ri, 1));
   }
 
+  async function runImport(file: File) {
+    setImportResult(null);
+    setImportLoading(true);
+    setImportOpen(true);
+    try {
+      setImportResult((await projectsApi.importPlan(file)) as ImportResult);
+    } catch (ex: any) {
+      setImportResult({ ok: false, source: "unknown", floors: [], error: ex.message });
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  function pickImport(file: File) {
+    lastImportFile.current = file;
+    runImport(file);
+  }
+
+  function retryImport() {
+    if (lastImportFile.current) runImport(lastImportFile.current);
+  }
+
+  async function applyImport(floors: ImportFloor[]) {
+    const newFloors = importedToFloors(floors);
+    if (!newFloors.length) {
+      setImportOpen(false);
+      return;
+    }
+    const hasData = project!.floors.some((f) => f.rooms.some(roomHasData)) || project!.floors.length > 1;
+    if (hasData) {
+      const ok = await confirm({
+        title: "Replace current floors?",
+        message: "Importing this plan will replace the floors and rooms currently in this project.",
+        confirmLabel: "Replace",
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    const next = { ...project!, floors: newFloors };
+    setProject(next);
+    setActiveFloor(0);
+    setImportOpen(false);
+    try {
+      await persist(next);
+      showToast("Imported from plan");
+    } catch {
+      showToast("Import save failed");
+    }
+  }
+
   const floor = project.floors[activeFloor];
 
   return (
@@ -187,20 +296,9 @@ export default function ProjectEditor() {
         <button className="btn btn-ghost btn-sm" onClick={() => nav("/")}><Icon name="arrow-left" size={15} /> Projects</button>
         <input className="proj-title-input" value={project.name} onChange={(e) => update((p) => { p.name = e.target.value; })} />
         <div className="spacer" />
-        <button className="btn btn-ghost btn-sm" onClick={save} disabled={saving}>
-          <Icon name="save" size={15} /> {saving ? "Saving…" : "Save"}
-        </button>
-        {showResults ? (
+        {showResults && (
           <button className="btn btn-ghost btn-sm" onClick={() => setShowResults(false)} style={{ color: "var(--amber)" }}>
             <Icon name="pencil" size={15} /> Edit
-          </button>
-        ) : (
-          <button
-            className={`btn btn-primary ${issues.length > 0 ? "disabled-soft" : ""}`}
-            title={issues[0] || "Generate the network design"}
-            onClick={async () => { if (issues.length > 0) return; await save(); setShowResults(true); }}
-          >
-            <Icon name="zap" size={15} /> Generate Design
           </button>
         )}
         <UserMenu />
@@ -251,10 +349,40 @@ export default function ProjectEditor() {
               <span className="floor-ico"><Icon name="building" size={18} /></span>
               <input ref={floorNameRef} type="text" className="floor-name-input" value={floor.name} onChange={(e) => update((p) => { p.floors[activeFloor].name = e.target.value; })} />
               <button className="btn btn-ghost btn-sm" onClick={addRoom}><Icon name="plus" size={15} /> Add Room</button>
+              <button
+                className="btn btn-ghost btn-sm"
+                title="Generate floors & rooms from a plan (DXF, PNG, JPG, PDF)"
+                onClick={() => { setImportResult(null); setImportLoading(false); setImportOpen(true); }}
+              >
+                <Icon name="upload" size={15} /> Import plan
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={save} disabled={saving}>
+                <Icon name="save" size={15} /> {saving ? "Saving…" : "Save"}
+              </button>
+              <button
+                className={`btn btn-primary btn-sm ${issues.length > 0 ? "disabled-soft" : ""}`}
+                title={issues[0] || "Generate the network design"}
+                onClick={async () => {
+                  if (issues.length > 0) return;
+                  if ((design?.totalDev ?? 0) === 0) {
+                    const ok = await confirm({
+                      title: "Generate with no devices?",
+                      message: "No devices have been added, so the design will be essentially empty (no access points, and switches sized only for uplinks). Generate anyway?",
+                      confirmLabel: "Generate anyway",
+                      cancelLabel: "Go back",
+                    });
+                    if (!ok) return;
+                  }
+                  await save();
+                  setShowResults(true);
+                }}
+              >
+                <Icon name="zap" size={15} /> Generate Design
+              </button>
             </div>
 
             {floor.rooms.map((r, ri) => {
-              const invalid = !r.name.trim() || !roomHasData(r);
+              const invalid = !r.name.trim();
               return (
                 <div className={`card room-card ${invalid ? "invalid" : ""}`} key={r.id}>
                   <div className="room-head">
@@ -302,6 +430,16 @@ export default function ProjectEditor() {
           </section>
         </div>
       )}
+
+      <ImportPlanModal
+        open={importOpen}
+        loading={importLoading}
+        result={importResult}
+        onClose={() => setImportOpen(false)}
+        onApply={applyImport}
+        onRetry={retryImport}
+        onPick={pickImport}
+      />
 
       {toast && <div className="toast show">{toast}</div>}
     </div>

@@ -50,6 +50,9 @@ class ProjectSummary(BaseModel):
     name: str
     created_at: datetime
     updated_at: datetime
+    floor_count: int = 0
+    room_count: int = 0
+    device_count: int = 0
 
 
 class ProjectOut(BaseModel):
