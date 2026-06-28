@@ -53,9 +53,10 @@ export async function apiUpload<T = any>(path: string, file: File): Promise<T> {
     let d = res.statusText;
     try {
       const j = await res.json();
-      d = j.detail || d;
+      if (typeof j.detail === "string") d = j.detail;
+      else if (Array.isArray(j.detail)) d = j.detail.map((e: any) => e.msg || JSON.stringify(e)).join(", ");
     } catch {
-      /* ignore */
+      /* non-JSON error body */
     }
     throw new Error(d);
   }

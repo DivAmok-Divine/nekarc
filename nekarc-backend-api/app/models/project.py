@@ -27,3 +27,20 @@ class Project(Base):
     assets: Mapped[list["Asset"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
+
+    # ── aggregates for the dashboard cards ──
+    @property
+    def floor_count(self) -> int:
+        return len(self.floors)
+
+    @property
+    def room_count(self) -> int:
+        return sum(len(f.rooms) for f in self.floors)
+
+    @property
+    def device_count(self) -> int:
+        return sum(
+            r.workstations + r.wifi_devices + r.printers + r.cameras + r.servers
+            for f in self.floors
+            for r in f.rooms
+        )
