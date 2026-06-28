@@ -17,6 +17,13 @@ const newRoom = (n: number): Room => ({
 const newFloor = (n: number): Floor => ({ id: uid(), name: `Floor ${n}`, order_index: n - 1, rooms: [newRoom(1)] });
 const freshProject = (): Project => ({ name: "New Building", floors: [newFloor(1)] });
 
+/** Derive a building name from an uploaded file name, e.g. "hq-ground-floor.dxf" -> "Hq Ground Floor". */
+function nameFromFile(filename: string): string {
+  const base = filename.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!base) return "Imported Building";
+  return base.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function importedToFloors(floors: ImportFloor[]): Floor[] {
   return floors.map((f, fi) => ({
     id: uid(),
@@ -277,6 +284,13 @@ export default function ProjectEditor() {
       if (!ok) return;
     }
     const next = { ...project!, floors: newFloors };
+    // Prefer the building name the AI read from the title block; fall back to the file name.
+    const aiName = importResult?.building_name?.trim();
+    const fname = lastImportFile.current?.name;
+    const derived = aiName || (fname ? nameFromFile(fname) : "");
+    if (derived && (!project!.name.trim() || project!.name.trim() === "New Building")) {
+      next.name = derived;
+    }
     setProject(next);
     setActiveFloor(0);
     setImportOpen(false);

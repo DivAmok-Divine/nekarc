@@ -34,9 +34,9 @@ export interface Vlan {
 }
 
 export interface Subnets {
-  staff: string;
-  guest: string;
-  printers: string;
+  staff: string | null;
+  guest: string | null;
+  printers: string | null;
   servers: string | null;
   cameras: string | null;
 }

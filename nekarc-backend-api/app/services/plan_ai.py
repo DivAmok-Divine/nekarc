@@ -22,6 +22,9 @@ except Exception:  # noqa: BLE001
 
 PROMPT = (
     "You read architectural floor plans and extract a structured model for network planning.\n"
+    "First, extract building_name: the overall project/building name from the title block or sheet header "
+    "(e.g. 'Construction Project of a Low Villa'). Do NOT use a floor/drawing name like 'Ground Floor' — "
+    "that's a floor, not the building. If there is no clear title, leave it empty.\n"
     "The document may contain one or more floors/levels. For EACH floor, list its rooms.\n"
     "For each room provide:\n"
     '- name: from its label if present, else a sensible name (e.g. "Office 1", "Meeting Room").\n'
@@ -49,6 +52,7 @@ _ROOM = {
 SCHEMA = {
     "type": "object",
     "properties": {
+        "building_name": {"type": "string"},
         "floors": {
             "type": "array",
             "items": {
@@ -98,8 +102,10 @@ def extract_from_plan(file_bytes: bytes, mime_type: str) -> dict:
 
     try:
         text = data["candidates"][0]["content"]["parts"][0]["text"]
-        floors = json.loads(text).get("floors", [])
+        parsed = json.loads(text)
+        floors = parsed.get("floors", [])
+        building_name = parsed.get("building_name", "")
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": f"Could not parse AI response: {e}", "floors": []}
 
-    return {"ok": True, "source": "ai", "floors": floors}
+    return {"ok": True, "source": "ai", "floors": floors, "building_name": building_name}
