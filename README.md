@@ -1,15 +1,3 @@
----
-title: nekarc
-emoji: 🌐
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-app_port: 7860
-pinned: false
----
-
-<!-- The block above is Hugging Face Spaces config (it builds the root Dockerfile). -->
-
 <div align="center">
   <img src="./assets/logo.svg" alt="nekarc — Network Architect" width="440" />
 

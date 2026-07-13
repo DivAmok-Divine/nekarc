@@ -10,7 +10,7 @@ from app.database import Base
 
 config = context.config
 # The database URL is owned by the app settings — never hard-coded in alembic.ini.
-config.set_main_option("sqlalchemy.url", settings.db_url)
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -19,7 +19,7 @@ target_metadata = Base.metadata
 
 # SQLite can't ALTER most things in place — batch mode rebuilds the table so
 # migrations (add/drop/alter column) work. compare_type catches type changes.
-_IS_SQLITE = settings.db_url.startswith("sqlite")
+_IS_SQLITE = settings.DATABASE_URL.startswith("sqlite")
 
 
 def run_migrations_offline() -> None:

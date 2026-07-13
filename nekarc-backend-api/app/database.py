@@ -5,16 +5,14 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import settings
 
-DB_URL = settings.db_url  # normalized (postgres:// -> postgresql://)
-
 # Ensure the SQLite directory exists ("sqlite:///./data/app.db" -> "./data")
-if DB_URL.startswith("sqlite"):
-    _db_path = DB_URL.replace("sqlite:///", "", 1)
+if settings.DATABASE_URL.startswith("sqlite"):
+    _db_path = settings.DATABASE_URL.replace("sqlite:///", "", 1)
     os.makedirs(os.path.dirname(_db_path) or ".", exist_ok=True)
 
-_connect_args = {"check_same_thread": False} if DB_URL.startswith("sqlite") else {}
+_connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
 
-engine = create_engine(DB_URL, connect_args=_connect_args, future=True)
+engine = create_engine(settings.DATABASE_URL, connect_args=_connect_args, future=True)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
 Base = declarative_base()
 
