@@ -3,7 +3,7 @@ import { projectsApi, type Asset } from "../../api/projects";
 import Icon, { ICONS } from "../../components/Icon";
 import { PALETTE, ROLE_COLORS } from "../../theme/colors";
 import {
-  computePlacement, coverageRadiusM, dist as pdist, mergePlacement, metresPerUnit, nearestIdf,
+  computePlacement, coverageRadiusM, mergePlacement, metresPerUnit, nearestIdf,
   type DeviceKind, type Placement,
 } from "../../engine/placement";
 import type { Design, Project, Room } from "../../engine/types";
@@ -401,6 +401,19 @@ export default function FloorPlan({
   );
   const coverageU = mPerU ? coverageRadiusM / mPerU : null;
 
+  // Geometry of the active floor's traced rooms: trunk orientation (cables run
+  // along the long axis) + a world-scaled unit so cable lines are drawn *on the
+  // plan* — thicker, and they grow/shrink as you zoom (unlike screen-constant UI).
+  const floorGeo = useMemo(() => {
+    const pts = floor.rooms.flatMap((r) => polys[r.id] ?? parsePoly(r.polygon_json) ?? []);
+    if (pts.length < 3) return { horizontal: true, span: img?.w ?? 1000 };
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
+    return { horizontal: w >= h, span: Math.max(w, h) };
+  }, [floor.rooms, polys, img]);
+  const trunkHorizontal = floorGeo.horizontal;
+  const worldLine = floorGeo.span / 130; // cable thickness in plan units (scales with zoom)
+
   // sizes that stay visually constant regardless of zoom
   const u = view.w / 900;
   const dot = 5 * u, line = 2 * u, font = 15 * u;
@@ -593,12 +606,17 @@ export default function FloorPlan({
                 ].map(({ it, color }, i) => {
                   const idf = nearestIdf([it.x, it.y], placement.idfs);
                   if (!idf) return null;
-                  const len = mPerU ? pdist([it.x, it.y], [idf.x, idf.y]) * mPerU : null;
+                  // Orthogonal route: drop off the device, run along the trunk to the closet.
+                  const bend: Pt = trunkHorizontal ? [it.x, idf.y] : [idf.x, it.y];
+                  const path: Pt[] = [[it.x, it.y], bend, [idf.x, idf.y]];
+                  const len = mPerU ? (dist([it.x, it.y], bend) + dist(bend, [idf.x, idf.y])) * mPerU : null;
+                  const lab: Pt = [(it.x + bend[0]) / 2, (it.y + bend[1]) / 2];
                   return (
                     <g key={`cbl-${i}`}>
-                      <line x1={it.x} y1={it.y} x2={idf.x} y2={idf.y} stroke={color} strokeWidth={mu * 1.6} strokeOpacity={0.7} style={{ pointerEvents: "none" }} />
+                      <polyline points={path.map((p) => p.join(",")).join(" ")} fill="none" stroke={color}
+                        strokeWidth={worldLine} strokeOpacity={0.75} strokeLinejoin="round" strokeLinecap="round" style={{ pointerEvents: "none" }} />
                       {len != null && (
-                        <text x={(it.x + idf.x) / 2} y={(it.y + idf.y) / 2} fontSize={12 * mu} fill={color}
+                        <text x={lab[0]} y={lab[1]} fontSize={12 * mu} fill={color}
                           textAnchor="middle" stroke="#0b1220" strokeWidth={mu * 2} paintOrder="stroke" style={{ pointerEvents: "none" }}>
                           {Math.round(len)} m
                         </text>
