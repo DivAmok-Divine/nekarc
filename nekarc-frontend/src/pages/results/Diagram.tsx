@@ -1,80 +1,123 @@
-import { ICONS } from "../../components/Icon";
+import { useMemo } from "react";
+import {
+  Background,
+  Controls,
+  Handle,
+  MiniMap,
+  Position,
+  ReactFlow,
+  type Edge,
+  type Node,
+  type NodeProps,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import Icon from "../../components/Icon";
 import { PALETTE } from "../../theme/colors";
+import { useTheme } from "../../theme/ThemeContext";
 import type { Design, FloorDesign } from "../../engine/types";
 
 const primarySubnet = (f: FloorDesign) =>
   f.subnets.staff || f.subnets.guest || f.subnets.printers || f.subnets.servers || f.subnets.cameras || "";
 
-/**
- * Lightweight SVG topology. Only floors with infrastructure are drawn,
- * and the core gear appears only when the building has something to serve.
- */
-export default function Diagram({ design, projectName }: { design: Design; projectName: string }) {
-  const active = design.floors.filter((f) => f.switchCount > 0);
+type DeviceData = { label: string; detail?: string; icon: string; color: string };
 
-  const colW = 230;
-  const W = Math.max(680, 60 + Math.max(active.length, 1) * colW);
-  const H = 560;
-  const cx = W / 2;
+// Custom node — a bordered device card with hidden top/bottom connection handles.
+function DeviceNode({ data }: NodeProps) {
+  const d = data as DeviceData;
+  return (
+    <div className="flow-node" style={{ borderColor: d.color }}>
+      <Handle type="target" position={Position.Top} className="flow-handle" />
+      <span className="flow-node-ico" style={{ color: d.color }}><Icon name={d.icon} size={16} /></span>
+      <div className="flow-node-text">
+        <div className="flow-node-label">{d.label}</div>
+        {d.detail && <div className="flow-node-detail">{d.detail}</div>}
+      </div>
+      <Handle type="source" position={Position.Bottom} className="flow-handle" />
+    </div>
+  );
+}
+const nodeTypes = { device: DeviceNode };
 
-  type Node = { x: number; y: number; w: number; label: string; icon: string; color: string; detail?: string };
-  type Edge = { x1: number; y1: number; x2: number; y2: number; color: string; dash?: boolean };
+const NODE_W = 172;
+const COL_W = 240;
+
+function buildGraph(design: Design, active: FloorDesign[]): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
-  const NW = 150, NH = 46;
+  if (active.length === 0) return { nodes, edges };
 
-  if (active.length > 0) {
-    const router = { x: cx - NW / 2, y: 16 };
-    const core = { x: cx - NW / 2, y: 104 };
-    nodes.push({ ...router, w: NW, label: "Router / Firewall", icon: "shield", color: PALETTE.red });
-    nodes.push({ ...core, w: NW, label: "Core Switch (L3)", icon: "switch", color: PALETTE.indigo });
-    edges.push({ x1: cx, y1: router.y + NH, x2: cx, y2: core.y, color: PALETTE.indigo });
+  const dev = (id: string, x: number, y: number, data: DeviceData): Node =>
+    ({ id, type: "device", position: { x, y }, data });
+  const link = (source: string, target: string, color: string, dashed = false): Edge =>
+    ({ id: `${source}->${target}`, source, target, style: { stroke: color, strokeDasharray: dashed ? "6 4" : undefined }, animated: dashed });
 
-    active.forEach((f, i) => {
-      const sx = 40 + i * colW;
-      const swX = sx + (colW - NW) / 2;
-      const swY = 210;
-      nodes.push({ x: swX, y: swY, w: NW, label: `${f.name} Switch`, icon: "switch", color: PALETTE.blue, detail: `${f.switchSize}p PoE · ${primarySubnet(f)}` });
-      edges.push({ x1: cx, y1: core.y + NH, x2: swX + NW / 2, y2: swY, color: PALETTE.blue });
+  const rowW = active.length * COL_W;
+  const cx = rowW / 2 - NODE_W / 2;
 
-      const endpoints: Node[] = [];
-      if (f.aps > 0) endpoints.push({ x: swX, y: 0, w: NW, label: `${f.aps}× WiFi 6 AP`, icon: "wifi", color: PALETTE.cyan });
-      if (f.ws > 0) endpoints.push({ x: swX, y: 0, w: NW, label: `${f.ws} Workstations`, icon: "monitor", color: PALETTE.green });
-      if (f.pr > 0) endpoints.push({ x: swX, y: 0, w: NW, label: `${f.pr} Printer${f.pr > 1 ? "s" : ""}`, icon: "printer", color: PALETTE.purple });
-      if (f.cam > 0) endpoints.push({ x: swX, y: 0, w: NW, label: `${f.cam} Camera${f.cam > 1 ? "s" : ""}`, icon: "camera", color: PALETTE.amber });
+  nodes.push(dev("router", cx, 0, { label: "Router / Firewall", detail: `${design.vlans.length} VLAN${design.vlans.length !== 1 ? "s" : ""}`, icon: "shield", color: PALETTE.red }));
+  nodes.push(dev("core", cx, 120, { label: "Core Switch (L3)", detail: "Inter-VLAN routing", icon: "switch", color: PALETTE.indigo }));
+  edges.push(link("router", "core", PALETTE.indigo));
 
-      endpoints.forEach((ep, ei) => {
-        ep.y = 300 + ei * 62;
-        nodes.push(ep);
-        edges.push({ x1: swX + NW / 2, y1: swY + NH, x2: ep.x + NW / 2, y2: ep.y, color: ep.color, dash: ep.icon === "wifi" });
-      });
+  active.forEach((f, i) => {
+    const colX = i * COL_W + (COL_W - NODE_W) / 2;
+    const swId = `sw-${f.id}`;
+    nodes.push(dev(swId, colX, 268, { label: `${f.name} Switch`, detail: `${f.switchSize}p PoE · ${primarySubnet(f)}`, icon: "switch", color: PALETTE.blue }));
+    edges.push(link("core", swId, PALETTE.blue));
+
+    const eps: DeviceData[] = [];
+    if (f.aps > 0) eps.push({ label: `${f.aps}× WiFi 6 AP`, icon: "wifi", color: PALETTE.cyan });
+    if (f.ws > 0) eps.push({ label: `${f.ws} Workstation${f.ws > 1 ? "s" : ""}`, icon: "monitor", color: PALETTE.green });
+    if (f.pr > 0) eps.push({ label: `${f.pr} Printer${f.pr > 1 ? "s" : ""}`, icon: "printer", color: PALETTE.purple });
+    if (f.cam > 0) eps.push({ label: `${f.cam} Camera${f.cam > 1 ? "s" : ""}`, icon: "camera", color: PALETTE.amber });
+    if (f.srv > 0) eps.push({ label: `${f.srv} Server${f.srv > 1 ? "s" : ""}`, icon: "server", color: PALETTE.green });
+
+    eps.forEach((ep, ei) => {
+      const epId = `${swId}-ep-${ei}`;
+      nodes.push(dev(epId, colX, 400 + ei * 84, ep));
+      edges.push(link(swId, epId, ep.color, ep.icon === "wifi"));
     });
-  }
+  });
+
+  return { nodes, edges };
+}
+
+/**
+ * Interactive topology (pan / zoom / drag) built on @xyflow/react.
+ * Only floors with infrastructure are drawn; core gear appears only when the
+ * building has something to serve.
+ */
+export default function Diagram({ design, projectName }: { design: Design; projectName: string }) {
+  const { theme } = useTheme();
+  const active = useMemo(() => design.floors.filter((f) => f.switchCount > 0), [design]);
+  const { nodes, edges } = useMemo(() => buildGraph(design, active), [design, active]);
 
   return (
     <div className="diagram-wrap">
       <div className="diagram-caption muted">
         {projectName} · {design.floors.length} floor{design.floors.length !== 1 ? "s" : ""} · {design.totalAPs} AP{design.totalAPs !== 1 ? "s" : ""}
+        {nodes.length > 0 && <span> · drag to pan, scroll to zoom</span>}
       </div>
       {nodes.length === 0 ? (
         <div className="diagram-empty muted">No devices yet — add some and the topology will appear here.</div>
       ) : (
-        <div style={{ overflow: "auto" }}>
-          <svg width={W} height={H} xmlns="http://www.w3.org/2000/svg">
-            {edges.map((e, i) => (
-              <line key={i} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke={e.color} strokeWidth={1.5} strokeOpacity={0.6} strokeDasharray={e.dash ? "5 3" : undefined} />
-            ))}
-            {nodes.map((n, i) => (
-              <g key={i} transform={`translate(${n.x},${n.y})`}>
-                <rect width={n.w} height={NH} rx={6} fill="var(--surface)" stroke={n.color} strokeWidth={1.5} />
-                <svg x={12} y={n.detail ? 8 : NH / 2 - 8} width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={n.color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  {ICONS[n.icon]}
-                </svg>
-                <text x={36} y={n.detail ? 19 : NH / 2 + 4} fontSize={11} fontWeight={700} fill="var(--text)">{n.label}</text>
-                {n.detail && <text x={36} y={34} fontSize={9} fill="var(--muted)">{n.detail.slice(0, 26)}</text>}
-              </g>
-            ))}
-          </svg>
+        <div className="diagram-flow">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            colorMode={theme}
+            fitView
+            fitViewOptions={{ padding: 0.2 }}
+            minZoom={0.2}
+            maxZoom={2}
+            nodesConnectable={false}
+            defaultEdgeOptions={{ type: "smoothstep" }}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background gap={18} size={1} />
+            <Controls showInteractive={false} />
+            <MiniMap pannable zoomable nodeColor={(n) => (n.data as DeviceData).color} nodeStrokeWidth={2} />
+          </ReactFlow>
         </div>
       )}
     </div>

@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { apiBlob } from "../../api/client";
 import Icon from "../../components/Icon";
 import type { Design, Project } from "../../engine/types";
-import Diagram from "./Diagram";
 import FloorPlan from "./FloorPlan";
+
+// Lazy-loaded so @xyflow/react (~60 KB gz) stays out of the main bundle — it's
+// only needed once the results view's Diagram tab is opened.
+const Diagram = lazy(() => import("./Diagram"));
 
 type Tab = "diagram" | "floorplan" | "bom" | "ip" | "vlans" | "summary" | "refs";
 const TABS: { key: Tab; icon: string; label: string }[] = [
@@ -20,10 +23,12 @@ export default function ResultsView({
   project,
   design,
   projectId,
+  onProjectChange,
 }: {
   project: Project;
   design: Design;
   projectId: string | number;
+  onProjectChange?: (next: Project) => void | Promise<void>;
 }) {
   const [tab, setTab] = useState<Tab>("diagram");
   const [exporting, setExporting] = useState(false);
@@ -38,8 +43,35 @@ export default function ResultsView({
           total_devices: design.totalDev,
           access_points: design.totalAPs,
           access_switches: design.switchTotal,
+          ...(design.hasGeometry
+            ? {
+                floor_area: `${Math.round(design.totalAreaM2).toLocaleString()} m²`,
+                estimated_cable: `${design.totalCableM.toLocaleString()} m`,
+                wiring_closets: design.idfTotal,
+              }
+            : {}),
         },
-        floors: design.floors.map((f) => ({ name: f.name, ws: f.ws, wifi: f.wifi, aps: f.aps })),
+        floors: design.floors.map((f) => ({
+          name: f.name,
+          ws: f.ws,
+          wifi: f.wifi,
+          aps: f.aps,
+          switch: f.switchCount > 0 ? `${f.switchSize}p` : "—",
+          ports: f.portsWithHeadroom,
+          ...(f.areaM2 > 0
+            ? {
+                area_m2: Math.round(f.areaM2),
+                cable_m: f.cableM,
+                max_run_m: Math.round(f.maxRunM),
+                idf: f.idfCount,
+                note: f.runExceedsLimit
+                  ? "Exceeds 90 m — extra IDF"
+                  : f.apsCoverage > f.apsCapacity
+                    ? "APs coverage-limited"
+                    : "",
+              }
+            : {}),
+        })),
         bom: design.bom,
         vlans: design.vlans.map((v) => ({ id: v.id, name: v.name, dhcp: v.dhcp })),
       };
@@ -64,6 +96,9 @@ export default function ResultsView({
     ["Switches", design.switchTotal + (design.totalDev > 0 ? 1 : 0)],
     ["VLANs", design.vlans.length],
     ["BOM Items", design.bom.length],
+    ...((design.hasGeometry
+      ? [["Floor Area (m²)", Math.round(design.totalAreaM2)], ["Cable (m)", design.totalCableM]]
+      : []) as [string, number][]),
   ];
 
   return (
@@ -90,8 +125,12 @@ export default function ResultsView({
       </div>
 
       <div className="tab-body">
-        {tab === "diagram" && <Diagram design={design} projectName={project.name} />}
-        {tab === "floorplan" && <FloorPlan project={project} projectId={projectId} />}
+        {tab === "diagram" && (
+          <Suspense fallback={<div className="diagram-empty muted">Loading diagram…</div>}>
+            <Diagram design={design} projectName={project.name} />
+          </Suspense>
+        )}
+        {tab === "floorplan" && <FloorPlan project={project} projectId={projectId} onProjectChange={onProjectChange} />}
         {tab === "bom" && <Bom design={design} />}
         {tab === "ip" && <Ip design={design} />}
         {tab === "vlans" && <Vlans design={design} />}
@@ -226,6 +265,11 @@ function Summary({ design }: { design: Design }) {
           ["switch", "Switch", f.switchCount > 0 ? `${f.switchSize}p` : "—"],
           ["switch", "Ports", f.portsWithHeadroom],
         ];
+        if (f.areaM2 > 0) {
+          items.push(["ruler", "Floor Area", `${Math.round(f.areaM2)} m²`]);
+          items.push(["ruler", "Cable Est.", `${f.cableM.toLocaleString()} m`]);
+        }
+        const coverageLimited = f.apsCoverage > f.apsCapacity;
         return (
           <div className="card" key={f.id}>
             <div className="card-title"><Icon name="building" size={15} /> {f.name}</div>
@@ -237,9 +281,12 @@ function Summary({ design }: { design: Design }) {
                 </div>
               ))}
             </div>
-            <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-              {f.needsPoE && <span className="badge badge-amber" style={{ marginRight: 8 }}>PoE Required</span>}
-              {primary ? <>Primary subnet: <span className="mono">{primary}</span></> : "No network devices on this floor."}
+            <div className="muted" style={{ fontSize: 12, marginTop: 10, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+              {f.needsPoE && <span className="badge badge-amber">PoE Required</span>}
+              {coverageLimited && <span className="badge badge-blue">APs coverage-limited ({f.apsCoverage} for area vs {f.apsCapacity} for clients)</span>}
+              {f.runExceedsLimit && <span className="badge badge-amber">Runs &gt; 90 m · {f.idfCount} IDFs</span>}
+              {f.areaM2 > 0 && <span className="mono" style={{ color: "var(--sub)" }}>avg run ≈ {Math.round(f.avgRunM)} m · max ≈ {Math.round(f.maxRunM)} m</span>}
+              <span>{primary ? <>Primary subnet: <span className="mono">{primary}</span></> : "No network devices on this floor."}</span>
             </div>
           </div>
         );

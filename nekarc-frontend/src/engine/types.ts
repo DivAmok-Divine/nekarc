@@ -58,6 +58,15 @@ export interface FloorDesign {
   portsNeeded: number;
   portsWithHeadroom: number;
   subnets: Subnets;
+  // ── geometry-aware (present only when the floor has traced areas) ──
+  areaM2: number; // total traced floor area (0 when no rooms are traced)
+  apsCapacity: number; // APs required by WiFi client count
+  apsCoverage: number; // APs required to cover the floor area (0 without geometry)
+  idfCount: number; // wiring closets on this floor (>1 when runs exceed the TIA limit)
+  cableM: number; // estimated horizontal Cat6A metres (0 without geometry)
+  avgRunM: number; // average cable run length
+  maxRunM: number; // farthest cable run length
+  runExceedsLimit: boolean; // a run is longer than the TIA 90 m horizontal limit
 }
 
 export interface BomItem {
@@ -75,4 +84,9 @@ export interface Design {
   switchTotal: number;
   bom: BomItem[];
   vlans: Vlan[];
+  // ── geometry-aware aggregates ──
+  hasGeometry: boolean; // any floor has traced areas
+  totalAreaM2: number;
+  totalCableM: number;
+  idfTotal: number;
 }

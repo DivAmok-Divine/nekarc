@@ -128,12 +128,24 @@ def parse_dxf(path: str) -> dict:
                 r["counts"][key] += 1
                 break
 
+    # ── normalise geometry to a top-left, y-down display space (like image pixels) ──
+    # so the traced-polygon format is identical to the PNG/JPG path.
+    all_coords = [c for r in rooms for c in r["poly"].exterior.coords]
+    min_x = min(c[0] for c in all_coords)
+    max_y = max(c[1] for c in all_coords)
+
+    def _display_poly(poly) -> list:
+        # drop the duplicate closing vertex shapely appends
+        pts = list(poly.exterior.coords)[:-1]
+        return [[round(x - min_x, 2), round(max_y - y, 2)] for (x, y) in pts]
+
     # ── group into floors by layer ──
     keys = {_floor_key(r["layer"]) for r in rooms}
     keys.discard(None)
 
     def room_out(r: dict, idx: int) -> dict:
-        return {"name": r["name"] or f"Room {idx + 1}", "area_m2": r["area_m2"], **r["counts"]}
+        return {"name": r["name"] or f"Room {idx + 1}", "area_m2": r["area_m2"],
+                "polygon": _display_poly(r["poly"]), **r["counts"]}
 
     floors = []
     if not keys:

@@ -20,7 +20,7 @@ def _table_style():
 
 def build_pdf(project_name: str, report: dict) -> bytes:
     from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
     from reportlab.platypus import (Paragraph, SimpleDocTemplate, Spacer, Table)
 
@@ -41,11 +41,43 @@ def build_pdf(project_name: str, report: dict) -> bytes:
         Spacer(1, 8 * mm),
     ]
 
+    small = ParagraphStyle("small", parent=styles["Normal"], fontSize=7, leading=8)
+
     totals = report.get("totals") or {}
     if totals:
         story.append(Paragraph("Project Summary", styles["Heading2"]))
         rows = [[str(k).replace("_", " ").title(), str(v)] for k, v in totals.items()]
         t = Table([["Metric", "Value"], *rows], colWidths=[80 * mm, 80 * mm])
+        t.setStyle(_table_style())
+        story.extend([t, Spacer(1, 6 * mm)])
+
+    floors = report.get("floors") or []
+    if floors:
+        story.append(Paragraph("Floor-by-Floor Summary", styles["Heading2"]))
+        has_geo = any(f.get("area_m2") for f in floors)
+        if has_geo:
+            header = ["Floor", "WS", "WiFi", "APs", "Switch", "Ports", "Area m²", "Cable m", "Max Run", "IDF", "Note"]
+            col_w = [22, 10, 12, 10, 14, 12, 15, 15, 15, 8, 27]
+            rows = [
+                [
+                    Paragraph(str(f.get("name", "")), small), str(f.get("ws", "")), str(f.get("wifi", "")),
+                    str(f.get("aps", "")), str(f.get("switch", "—")), str(f.get("ports", "")),
+                    str(f.get("area_m2", "")), str(f.get("cable_m", "")), str(f.get("max_run_m", "")),
+                    str(f.get("idf", "")), Paragraph(str(f.get("note", "")), small),
+                ]
+                for f in floors
+            ]
+        else:
+            header = ["Floor", "WS", "WiFi", "APs", "Switch", "Ports"]
+            col_w = [60, 20, 20, 20, 30, 30]
+            rows = [
+                [
+                    Paragraph(str(f.get("name", "")), small), str(f.get("ws", "")), str(f.get("wifi", "")),
+                    str(f.get("aps", "")), str(f.get("switch", "—")), str(f.get("ports", "")),
+                ]
+                for f in floors
+            ]
+        t = Table([header, *rows], colWidths=[w * mm for w in col_w])
         t.setStyle(_table_style())
         story.extend([t, Spacer(1, 6 * mm)])
 

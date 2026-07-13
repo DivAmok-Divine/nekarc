@@ -10,16 +10,21 @@ FRONTEND="$ROOT/nekarc-frontend"
 # ── Backend ──────────────────────────────────────────────
 echo "▶ Backend setup…"
 cd "$BACKEND"
-[ -d .venv ] || python3 -m venv .venv
-# shellcheck disable=SC1091
-source .venv/bin/activate
-pip install -q --upgrade pip
-pip install -q -r requirements.txt
+VENV="$BACKEND/.venv"
+# Recreate the venv if it's missing or was created at a different path
+# (a venv hardcodes absolute paths, so moving the project breaks it).
+if [ ! -x "$VENV/bin/python" ] || ! grep -qF "\"$VENV\"" "$VENV/bin/activate" 2>/dev/null; then
+  echo "  (creating fresh virtualenv)"
+  rm -rf "$VENV"
+  python3 -m venv "$VENV"
+fi
+# Invoke tools via the venv binaries directly — no PATH activation needed.
+"$VENV/bin/python" -m pip install -q --upgrade pip
+"$VENV/bin/python" -m pip install -q -r requirements.txt
 [ -f .env ] || cp .env.example .env
 echo "▶ Starting backend → http://localhost:3333"
-uvicorn app.main:app --reload --port 3333 --host 0.0.0.0 > "$RUN/backend.log" 2>&1 &
+"$VENV/bin/uvicorn" app.main:app --reload --port 3333 --host 0.0.0.0 > "$RUN/backend.log" 2>&1 &
 echo $! > "$RUN/backend.pid"
-deactivate
 
 # ── Frontend ─────────────────────────────────────────────
 echo "▶ Frontend setup…"

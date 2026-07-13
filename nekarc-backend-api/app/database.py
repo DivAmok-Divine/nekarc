@@ -18,16 +18,23 @@ Base = declarative_base()
 
 
 def init_db() -> None:
-    """Create tables. v1 uses create_all; Alembic migrations are a later step."""
-    from app import models  # noqa: F401  ensure all models are registered on Base
+    """Bring the schema to the latest Alembic revision — migrations are the source of truth."""
+    from alembic import command
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import inspect
 
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    Base.metadata.create_all(bind=engine)
 
-    # Lightweight migration for existing SQLite DBs (until Alembic lands):
-    # add new columns that create_all won't add to an already-existing table.
-    if settings.DATABASE_URL.startswith("sqlite"):
-        with engine.begin() as conn:
-            cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(users)")]
-            if "theme" not in cols:
-                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN theme VARCHAR(10) DEFAULT 'system'")
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cfg = Config(os.path.join(root, "alembic.ini"))
+
+    tables = set(inspect(engine).get_table_names())
+    if "alembic_version" not in tables and "users" in tables:
+        # Pre-Alembic database (created by the old create_all): adopt it at the
+        # baseline so the upgrade below layers on newer migrations without
+        # trying to recreate the tables it already has.
+        base_rev = ScriptDirectory.from_config(cfg).get_bases()[0]
+        command.stamp(cfg, base_rev)
+
+    command.upgrade(cfg, "head")

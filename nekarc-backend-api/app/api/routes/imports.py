@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 
@@ -42,6 +43,10 @@ def _normalize(result: dict) -> dict:
                 "name": _nice_name(str(r.get("name") or ""), f"Room {ri + 1}"),
                 "area_m2": round(float(r.get("area_m2") or 0), 1),
             }
+            # DXF parse carries real room geometry — keep it so the design is geometry-aware.
+            poly = r.get("polygon")
+            if isinstance(poly, list) and len(poly) >= 3:
+                room["polygon_json"] = json.dumps({"points": poly})
             for k in DEVICE_KEYS:
                 room[k] = _int(r.get(k, 0))
             rooms.append(room)

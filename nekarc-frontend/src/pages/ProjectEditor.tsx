@@ -38,7 +38,7 @@ function importedToFloors(floors: ImportFloor[]): Floor[] {
       cameras: r.cameras || 0,
       servers: r.servers || 0,
       area_m2: r.area_m2 ?? null,
-      polygon_json: null,
+      polygon_json: r.polygon_json ?? null,
     })),
   }));
 }
@@ -302,6 +302,13 @@ export default function ProjectEditor() {
     }
   }
 
+  // Geometry traced on the floor-plan canvas flows back here so it stays in
+  // sync with the editor state and is persisted.
+  async function handleProjectChange(next: Project) {
+    setProject(next);
+    await persist(next);
+  }
+
   const floor = project.floors[activeFloor];
 
   return (
@@ -319,7 +326,7 @@ export default function ProjectEditor() {
       </header>
 
       {showResults && design ? (
-        <ResultsView project={project} design={design} projectId={id!} />
+        <ResultsView project={project} design={design} projectId={id!} onProjectChange={handleProjectChange} />
       ) : (
         <div className="editor">
           <aside className="floor-side">
