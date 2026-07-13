@@ -1,8 +1,27 @@
 import { lazy, Suspense, useState } from "react";
 import { apiBlob } from "../../api/client";
 import Icon from "../../components/Icon";
+import { buildFloorPlanSvg } from "../../engine/planSvg";
 import type { Design, Project } from "../../engine/types";
 import FloorPlan from "./FloorPlan";
+
+/** Rasterise a standalone SVG string to a base64 PNG (for embedding in the PDF). */
+function svgToPng(svg: string, w: number, h: number): Promise<{ image: string; w: number; h: number }> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return reject(new Error("no 2d context"));
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(image, 0, 0, w, h);
+      resolve({ image: canvas.toDataURL("image/png").split(",")[1], w, h });
+    };
+    image.onerror = () => reject(new Error("svg render failed"));
+    image.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  });
+}
 
 // Lazy-loaded so @xyflow/react (~60 KB gz) stays out of the main bundle — it's
 // only needed once the results view's Diagram tab is opened.
@@ -36,6 +55,16 @@ export default function ResultsView({
   async function exportPdf() {
     setExporting(true);
     try {
+      // Rasterise each floor's plan geometry (+ placement) to embed in the PDF.
+      const plans: { name: string; image: string; w: number; h: number }[] = [];
+      for (const f of project.floors) {
+        try {
+          const built = buildFloorPlanSvg(f);
+          if (built) plans.push({ name: f.name, ...(await svgToPng(built.svg, built.w, built.h)) });
+        } catch {
+          /* a floor's plan is best-effort — skip on failure */
+        }
+      }
       const report = {
         totals: {
           building: project.name,
@@ -74,6 +103,7 @@ export default function ResultsView({
         })),
         bom: design.bom,
         vlans: design.vlans.map((v) => ({ id: v.id, name: v.name, dhcp: v.dhcp })),
+        plans,
       };
       const blob = await apiBlob(`/projects/${projectId}/export/pdf`, report);
       const url = URL.createObjectURL(blob);

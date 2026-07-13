@@ -1,4 +1,5 @@
 """Server-side PDF generation (reportlab — pure-python, no system deps)."""
+import base64
 import io
 
 
@@ -22,7 +23,8 @@ def build_pdf(project_name: str, report: dict) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.platypus import (Paragraph, SimpleDocTemplate, Spacer, Table)
+    from reportlab.platypus import (Image as RLImage, PageBreak, Paragraph,
+                                    SimpleDocTemplate, Spacer, Table)
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -96,6 +98,26 @@ def build_pdf(project_name: str, report: dict) -> bytes:
         t = Table([["VLAN", "Name", "DHCP"], *rows], colWidths=[20 * mm, 70 * mm, 70 * mm])
         t.setStyle(_table_style())
         story.append(t)
+
+    # ── Floor plans (rasterised geometry + device placement) ──
+    plans = report.get("plans") or []
+    plans = [p for p in plans if p.get("image")]
+    if plans:
+        content_w, max_h = 180 * mm, 215 * mm
+        story.append(PageBreak())
+        story.append(Paragraph("Floor Plans", styles["Heading2"]))
+        for pl in plans:
+            try:
+                data = base64.b64decode(pl["image"])
+            except Exception:  # noqa: BLE001
+                continue
+            w, h = pl.get("w") or 1, pl.get("h") or 1
+            iw, ih = content_w, content_w * h / w
+            if ih > max_h:
+                iw, ih = max_h * w / h, max_h
+            story.append(Paragraph(pl.get("name", "Floor"), styles["Heading3"]))
+            story.append(RLImage(io.BytesIO(data), width=iw, height=ih))
+            story.append(Spacer(1, 6 * mm))
 
     doc.build(story)
     return buf.getvalue()
