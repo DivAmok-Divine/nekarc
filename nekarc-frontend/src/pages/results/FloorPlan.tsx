@@ -60,6 +60,15 @@ const centroid = (pts: Pt[]): Pt => {
 
 const dist = (a: Pt, b: Pt) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
+const pointInPoly = (pt: Pt, poly: Pt[]): boolean => {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+};
+
 const ICON_FOR: Record<DeviceKind, string> = {
   workstations: "monitor", printers: "printer", cameras: "camera", servers: "server",
 };
@@ -115,6 +124,14 @@ export default function FloorPlan({
   const svgRef = useRef<SVGSVGElement>(null);
   const panRef = useRef<{ sx: number; sy: number; vx: number; vy: number } | null>(null);
   const urlRef = useRef<string>("");
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // When a room becomes selected (from the canvas or the list), scroll the list to it.
+  useEffect(() => {
+    if (!activeRoom) return;
+    const el = listRef.current?.querySelector(`[data-room-id="${CSS.escape(activeRoom)}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [activeRoom]);
 
   const floor = project.floors[activeFloor];
 
@@ -290,10 +307,19 @@ export default function FloorPlan({
     dragItem.current = { kind, id };
   }
 
-  // ── click places points while tracing / calibrating ──
+  // ── click: select a room (pan mode) or place points (trace/scale) ──
   function onClickCanvas(e: React.MouseEvent) {
-    if (showDesign || mode === "pan" || !img) return;
+    if (showDesign) return;
     const p = toImg(e.clientX, e.clientY);
+    if (mode === "pan") {
+      // pick the SMALLEST room whose polygon contains the click — robust to overlap
+      const hit = floor.rooms
+        .filter((r) => polys[r.id] && pointInPoly(p, polys[r.id]))
+        .sort((a, b) => shoelace(polys[a.id]) - shoelace(polys[b.id]))[0];
+      if (hit) setActiveRoom(hit.id);
+      return;
+    }
+    if (!img) return;
     if (mode === "scale") {
       setDraft((d) => (d.length >= 2 ? [p] : [...d, p]));
       return;
@@ -413,10 +439,11 @@ export default function FloorPlan({
   }, [floor.rooms, polys, img]);
   const trunkHorizontal = floorGeo.horizontal;
   const worldLine = floorGeo.span / 130; // cable thickness in plan units (scales with zoom)
+  const worldFont = floorGeo.span / 45; // room-label size in plan units (grows as you zoom in)
 
   // sizes that stay visually constant regardless of zoom
   const u = view.w / 900;
-  const dot = 5 * u, line = 2 * u, font = 15 * u;
+  const dot = 5 * u, line = 2 * u;
   const mu = view.w / 460; // larger unit for design-overlay markers (~2× the trace unit)
 
   // ── nothing to show yet (no image and no traced geometry): upload prompt ──
@@ -571,30 +598,32 @@ export default function FloorPlan({
             {imgUrl && <image href={imgUrl} x={0} y={0} width={img?.w} height={img?.h} />}
 
             {/* room polygons (dimmed under the design overlay) */}
-            {floor.rooms.map((r) => {
-              const p = polys[r.id];
-              if (!p) return null;
-              const active = r.id === activeRoom;
-              const [cx, cy] = centroid(p);
-              const a = shownArea(r);
-              return (
-                <g key={r.id}>
-                  <polygon
-                    points={p.map((pt) => pt.join(",")).join(" ")}
-                    fill={showDesign ? "rgba(96,165,250,0.05)" : active ? "rgba(96,165,250,0.28)" : "rgba(96,165,250,0.14)"}
-                    stroke={showDesign ? "rgba(96,165,250,0.4)" : active ? "#60a5fa" : "#3b82f6"}
-                    strokeWidth={line}
-                    strokeLinejoin="round"
-                  />
-                  {!showDesign && (
-                    <text x={cx} y={cy} fontSize={font} fill="#e5edff" textAnchor="middle"
-                      stroke="#0b1220" strokeWidth={font * 0.14} paintOrder="stroke" style={{ pointerEvents: "none" }}>
-                      {r.name}{a != null ? ` · ${a.toFixed(1)} m²` : ""}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
+            {[...floor.rooms]
+              .sort((a, b) => (a.id === activeRoom ? 1 : 0) - (b.id === activeRoom ? 1 : 0)) // selected on top
+              .map((r) => {
+                const p = polys[r.id];
+                if (!p) return null;
+                const active = r.id === activeRoom;
+                const [cx, cy] = centroid(p);
+                const a = shownArea(r);
+                return (
+                  <g key={r.id} style={{ pointerEvents: "none" }}>
+                    <polygon
+                      points={p.map((pt) => pt.join(",")).join(" ")}
+                      fill={showDesign ? "rgba(96,165,250,0.05)" : active ? "rgba(245,158,11,0.32)" : "rgba(96,165,250,0.12)"}
+                      stroke={showDesign ? "rgba(96,165,250,0.4)" : active ? "#f59e0b" : "#3b82f6"}
+                      strokeWidth={active && !showDesign ? line * 2 : line}
+                      strokeLinejoin="round"
+                    />
+                    {!showDesign && (
+                      <text x={cx} y={cy} fontSize={worldFont} fill="#e5edff" textAnchor="middle"
+                        stroke="#0b1220" strokeWidth={worldFont * 0.14} paintOrder="stroke">
+                        {r.name}{a != null ? ` · ${a.toFixed(1)} m²` : ""}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
 
             {/* ── design overlay ── */}
             {showDesign && placement && (
@@ -708,12 +737,12 @@ export default function FloorPlan({
             </div>
           ) : (
             <>
-              <div className="pr-list">
+              <div className="pr-list" ref={listRef}>
                 {floor.rooms.map((r: Room) => {
                   const a = shownArea(r);
                   const has = !!polys[r.id];
                   return (
-                    <div key={r.id} className={`pr-item ${r.id === activeRoom ? "active" : ""}`}>
+                    <div key={r.id} data-room-id={r.id} className={`pr-item ${r.id === activeRoom ? "active" : ""}`}>
                       <button className="pr-main" onClick={() => startTrace(r.id)} title="Trace this room">
                         <span className={`pr-dot ${has ? "on" : ""}`} />
                         <span className="pr-name">{r.name}</span>

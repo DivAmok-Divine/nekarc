@@ -368,7 +368,7 @@ input:disabled { opacity: .6; cursor: not-allowed; }
 .pr-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .pr-list { display: flex; flex-direction: column; gap: 4px; max-height: 54vh; overflow-y: auto; }
 .pr-item { display: flex; align-items: center; gap: 4px; border-radius: var(--r); }
-.pr-item.active { background: rgba(59,130,246,.12); }
+.pr-item.active { background: rgba(245,158,11,.16); box-shadow: inset 2px 0 0 var(--amber); }
 .pr-main { flex: 1; display: flex; align-items: center; gap: 8px; background: transparent; border: none; color: var(--text); padding: 8px; font-size: 13px; cursor: pointer; text-align: left; border-radius: var(--r); }
 .pr-main:hover { background: var(--surface2); }
 .pr-dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--muted); flex-shrink: 0; }
