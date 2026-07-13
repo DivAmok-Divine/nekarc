@@ -5,6 +5,7 @@ export interface ImportRoom {
   name: string;
   area_m2?: number;
   polygon_json?: string | null; // present for DXF imports (real room geometry)
+  box?: number[]; // AI vision bounding box [ymin, xmin, ymax, xmax], 0-1000
   workstations: number;
   wifi_devices: number;
   printers: number;

@@ -47,6 +47,11 @@ def _normalize(result: dict) -> dict:
             poly = r.get("polygon")
             if isinstance(poly, list) and len(poly) >= 3:
                 room["polygon_json"] = json.dumps({"points": poly})
+            # AI vision returns a per-room bounding box [ymin,xmin,ymax,xmax] (0-1000);
+            # the client turns it into a pixel polygon once it knows the image size.
+            box = r.get("box")
+            if isinstance(box, list) and len(box) == 4 and all(isinstance(v, (int, float)) for v in box):
+                room["box"] = [round(float(v), 1) for v in box]
             for k in DEVICE_KEYS:
                 room[k] = _int(r.get(k, 0))
             rooms.append(room)

@@ -24,7 +24,27 @@ function nameFromFile(filename: string): string {
   return base.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function importedToFloors(floors: ImportFloor[]): Floor[] {
+const isImageFile = (name?: string) => !!name && /\.(png|jpe?g)$/i.test(name);
+
+/** Natural pixel dimensions of an image File (for mapping AI boxes → pixels). */
+function imageDims(file: File): Promise<{ w: number; h: number } | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve({ w: img.naturalWidth, h: img.naturalHeight }); };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
+/** Gemini box [ymin, xmin, ymax, xmax] (0-1000) → a pixel-space rectangle polygon. */
+function boxToPolygon(box: number[], w: number, h: number): string {
+  const [ymin, xmin, ymax, xmax] = box;
+  const x0 = (xmin / 1000) * w, y0 = (ymin / 1000) * h, x1 = (xmax / 1000) * w, y1 = (ymax / 1000) * h;
+  return JSON.stringify({ points: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] });
+}
+
+function importedToFloors(floors: ImportFloor[], dims?: { w: number; h: number } | null): Floor[] {
   return floors.map((f, fi) => ({
     id: uid(),
     name: f.name || `Floor ${fi + 1}`,
@@ -38,7 +58,8 @@ function importedToFloors(floors: ImportFloor[]): Floor[] {
       cameras: r.cameras || 0,
       servers: r.servers || 0,
       area_m2: r.area_m2 ?? null,
-      polygon_json: r.polygon_json ?? null,
+      // DXF gives a real polygon; AI gives a box we turn into a rectangle once we know the image size.
+      polygon_json: r.polygon_json ?? (dims && r.box?.length === 4 ? boxToPolygon(r.box, dims.w, dims.h) : null),
     })),
   }));
 }
@@ -166,18 +187,19 @@ export default function ProjectEditor() {
 
   // Create on first persist, update thereafter. A draft (id === "new") only
   // hits the DB once the user actually saves or generates.
-  async function persist(next: Project) {
+  async function persist(next: Project): Promise<string | null> {
     if (savedId) {
       await projectsApi.update(savedId, toPayload(next));
-      return;
+      return savedId;
     }
-    if (creatingRef.current) return;
+    if (creatingRef.current) return null;
     creatingRef.current = true;
     try {
       const created: any = await projectsApi.create(toPayload(next));
       skipFetch.current = true;
       setSavedId(String(created.id));
       nav(`/projects/${created.id}`, { replace: true });
+      return String(created.id);
     } finally {
       creatingRef.current = false;
     }
@@ -270,7 +292,11 @@ export default function ProjectEditor() {
   }
 
   async function applyImport(floors: ImportFloor[]) {
-    const newFloors = importedToFloors(floors);
+    const file = lastImportFile.current;
+    // Photo/PNG imports: fold the AI's per-room boxes into real polygons (needs the image size).
+    const needDims = isImageFile(file?.name) && floors.some((f) => f.rooms.some((r) => r.box?.length === 4));
+    const dims = needDims && file ? await imageDims(file) : null;
+    const newFloors = importedToFloors(floors, dims);
     if (!newFloors.length) {
       setImportOpen(false);
       return;
@@ -297,7 +323,11 @@ export default function ProjectEditor() {
     setActiveFloor(0);
     setImportOpen(false);
     try {
-      await persist(next);
+      const pid = await persist(next);
+      // Reuse the imported plan on the Floor Plan tab — persist it once, no second upload.
+      if (pid && file && isImageFile(file.name)) {
+        try { await projectsApi.uploadPlan(pid, file); } catch { /* background image is optional */ }
+      }
       showToast("Imported from plan");
     } catch {
       showToast("Import save failed");

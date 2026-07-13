@@ -32,6 +32,8 @@ PROMPT = (
     "- workstations: number of desks/workstations/cubicles visible (or a reasonable estimate for an office of that size).\n"
     "- wifi_devices: wireless clients; if not indicated, estimate ~1-2 per workstation for offices, else 0.\n"
     "- printers, cameras, servers: count visible printer/copier, CCTV/camera, and server/rack symbols.\n"
+    "- box: the room's bounding box on the image as [ymin, xmin, ymax, xmax], integers 0-1000 "
+    "normalized to the image height and width. Be as tight and accurate as possible.\n"
     "If the plan shows no furniture, set counts to 0. Do not invent unrealistic numbers.\n"
     "Return ONLY JSON for the given schema."
 )
@@ -41,6 +43,7 @@ _ROOM = {
     "properties": {
         "name": {"type": "string"},
         "area_m2": {"type": "number"},
+        "box": {"type": "array", "items": {"type": "number"}},  # [ymin, xmin, ymax, xmax], 0-1000
         "workstations": {"type": "integer"},
         "wifi_devices": {"type": "integer"},
         "printers": {"type": "integer"},
