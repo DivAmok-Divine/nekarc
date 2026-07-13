@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { projectsApi, type Asset } from "../../api/projects";
-import Icon from "../../components/Icon";
-import type { Project, Room } from "../../engine/types";
+import Icon, { ICONS } from "../../components/Icon";
+import { PALETTE, ROLE_COLORS } from "../../theme/colors";
+import {
+  computePlacement, coverageRadiusM, dist as pdist, mergePlacement, metresPerUnit, nearestIdf,
+  type DeviceKind, type Placement,
+} from "../../engine/placement";
+import type { Design, Project, Room } from "../../engine/types";
 
 /**
- * Building-plan → geometry. Upload a PNG/JPG plan, then:
- *   1. calibrate a real-world scale by drawing a line of known length,
- *   2. trace each room as a polygon,
- * and the room's floor area is computed and saved to `area_m2` / `polygon_json`.
- * DXF plans keep the server auto-read path (handled by Import plan); this canvas
- * is the manual trace path that works with any image.
+ * Building-plan → geometry + physical layout. Upload a PNG/JPG plan, calibrate a
+ * scale, and trace rooms (saved to area_m2 / polygon_json). With "Design overlay"
+ * on, the generated design is auto-placed on the plan — access points (+coverage),
+ * the switch/IDF, and wired-device markers — with cable runs to the nearest closet.
+ * Everything is draggable and saved per floor (placement_json).
  */
 
 type Pt = [number, number];
@@ -23,6 +27,17 @@ const parsePoly = (json?: string | null): Pt[] | null => {
     if (Array.isArray(o?.points) && o.points.length >= 3) return o.points as Pt[];
   } catch {
     /* ignore malformed geometry */
+  }
+  return null;
+};
+
+const parsePlacement = (json?: string | null): Placement | null => {
+  if (!json) return null;
+  try {
+    const o = JSON.parse(json);
+    if (o && Array.isArray(o.idfs) && Array.isArray(o.aps) && Array.isArray(o.devices)) return o as Placement;
+  } catch {
+    /* ignore */
   }
   return null;
 };
@@ -45,13 +60,19 @@ const centroid = (pts: Pt[]): Pt => {
 
 const dist = (a: Pt, b: Pt) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
+const ICON_FOR: Record<DeviceKind, string> = {
+  workstations: "monitor", printers: "printer", cameras: "camera", servers: "server",
+};
+
 export default function FloorPlan({
   project,
   projectId,
+  design,
   onProjectChange,
 }: {
   project: Project;
   projectId: string | number;
+  design: Design;
   onProjectChange?: (next: Project) => void | Promise<void>;
 }) {
   // ── plan image ──
@@ -80,17 +101,26 @@ export default function FloorPlan({
     }
     return m;
   });
-  // rooms that already had a polygon on load — so a "clear" can null their area on save.
   const initialPolyRooms = useRef<Set<string>>(
     new Set(project.floors.flatMap((f) => f.rooms).filter((r) => parsePoly(r.polygon_json)).map((r) => r.id))
   );
   const [dirty, setDirty] = useState(false);
+
+  // ── design overlay (physical device placement) ──
+  const [showDesign, setShowDesign] = useState(false);
+  const [placement, setPlacement] = useState<Placement | null>(null);
+  const [placementDirty, setPlacementDirty] = useState(false);
+  const dragItem = useRef<{ kind: "ap" | "idf" | "device"; id: string } | null>(null);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const panRef = useRef<{ sx: number; sy: number; vx: number; vy: number } | null>(null);
   const urlRef = useRef<string>("");
 
   const floor = project.floors[activeFloor];
+
+  // Rooms with their latest (possibly unsaved) traced polygons folded in.
+  const liveRooms = (rooms: Room[]): Room[] =>
+    rooms.map((r) => (polys[r.id] ? { ...r, polygon_json: JSON.stringify({ points: polys[r.id] }) } : r));
 
   // ── load the list of uploaded plans; pick the newest image ──
   useEffect(() => {
@@ -157,6 +187,17 @@ export default function FloorPlan({
     fittedFloor.current = activeFloor;
   }, [imgUrl, geoBounds, activeFloor]);
 
+  // ── (re)compute the placement when entering design mode or switching floor ──
+  useEffect(() => {
+    if (!showDesign) return;
+    const df = design.floors.find((d) => d.id === floor.id) ?? design.floors[activeFloor];
+    if (!df) { setPlacement(null); return; }
+    const fresh = computePlacement(liveRooms(floor.rooms), df);
+    setPlacement(mergePlacement(fresh, parsePlacement(floor.placement_json)));
+    setPlacementDirty(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showDesign, activeFloor]);
+
   // ── native non-passive wheel zoom (so we can preventDefault the page scroll) ──
   useEffect(() => {
     const svg = svgRef.current;
@@ -209,14 +250,26 @@ export default function FloorPlan({
     }
   }
 
-  // ── pan (left-drag in pan mode, or middle-drag in any mode) ──
+  // ── pan (bg-drag in pan/design mode, or middle-drag anywhere) ──
   function onPointerDown(e: React.PointerEvent) {
-    if (!(mode === "pan" || e.button === 1)) return;
+    if (!(showDesign || mode === "pan" || e.button === 1)) return;
     e.preventDefault();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     panRef.current = { sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
   }
   function onPointerMove(e: React.PointerEvent) {
+    const di = dragItem.current;
+    if (di) {
+      const [x, y] = toImg(e.clientX, e.clientY);
+      setPlacement((prev) => {
+        if (!prev) return prev;
+        const upd = <T extends { id: string }>(arr: T[]) => arr.map((it) => (it.id === di.id ? { ...it, x, y } : it));
+        if (di.kind === "ap") return { ...prev, aps: upd(prev.aps) };
+        if (di.kind === "idf") return { ...prev, idfs: upd(prev.idfs) };
+        return { ...prev, devices: upd(prev.devices) };
+      });
+      return;
+    }
     const pan = panRef.current;
     if (!pan) return;
     const rect = svgRef.current!.getBoundingClientRect();
@@ -226,17 +279,25 @@ export default function FloorPlan({
       y: pan.vy - ((e.clientY - pan.sy) * v.h) / rect.height,
     }));
   }
-  function onPointerUp() { panRef.current = null; }
+  function onPointerUp() {
+    if (dragItem.current) { dragItem.current = null; setPlacementDirty(true); return; }
+    panRef.current = null;
+  }
+  function startItemDrag(e: React.PointerEvent, kind: "ap" | "idf" | "device", id: string) {
+    e.stopPropagation();
+    e.preventDefault();
+    svgRef.current?.setPointerCapture(e.pointerId);
+    dragItem.current = { kind, id };
+  }
 
   // ── click places points while tracing / calibrating ──
   function onClickCanvas(e: React.MouseEvent) {
-    if (mode === "pan" || !img) return;
+    if (showDesign || mode === "pan" || !img) return;
     const p = toImg(e.clientX, e.clientY);
     if (mode === "scale") {
       setDraft((d) => (d.length >= 2 ? [p] : [...d, p]));
       return;
     }
-    // trace
     if (!activeRoom) { setStatus("Pick a room from the list first."); return; }
     if (draft.length >= 3 && dist(p, draft[0]) < view.w * 0.02) {
       commitPolygon(draft);
@@ -277,15 +338,26 @@ export default function FloorPlan({
     setDirty(true);
   }
 
-  // Recompute area from the image scale when calibrated; otherwise fall back to the
-  // stored area (e.g. from a DXF import, where geometry is already in real metres).
+  function toggleDesign() {
+    setShowDesign((s) => {
+      if (!s) { setMode("pan"); setDraft([]); }
+      return !s;
+    });
+  }
+  function regenerateLayout() {
+    const df = design.floors.find((d) => d.id === floor.id) ?? design.floors[activeFloor];
+    if (!df) return;
+    setPlacement(computePlacement(liveRooms(floor.rooms), df));
+    setPlacementDirty(true);
+  }
+
   const shownArea = (r: Room): number | null => {
     const p = polys[r.id];
     if (p && scale) return shoelace(p) * scale * scale;
     return r.area_m2 ?? null;
   };
 
-  async function saveGeometry() {
+  async function save() {
     setBusy(true);
     try {
       const next: Project = structuredClone(project);
@@ -297,13 +369,18 @@ export default function FloorPlan({
           if (a != null) r.area_m2 = Math.round(a * 10) / 10;
         } else {
           r.polygon_json = null;
-          if (initialPolyRooms.current.has(r.id)) r.area_m2 = null; // was traced, now cleared
+          if (initialPolyRooms.current.has(r.id)) r.area_m2 = null;
         }
+      }
+      if (placement) {
+        const af = next.floors[activeFloor];
+        if (af) af.placement_json = JSON.stringify(placement);
       }
       await onProjectChange?.(next);
       initialPolyRooms.current = new Set(Object.keys(polys));
       setDirty(false);
-      setStatus("Geometry saved.");
+      setPlacementDirty(false);
+      setStatus(showDesign ? "Layout saved." : "Geometry saved.");
     } catch {
       setStatus("Save failed.");
     } finally {
@@ -316,6 +393,14 @@ export default function FloorPlan({
     [floor.rooms, polys]
   );
 
+  // metres per canvas unit: image calibration if set, else derived from traced areas
+  const mPerU = useMemo(
+    () => scale ?? metresPerUnit(liveRooms(floor.rooms)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scale, floor.rooms, polys]
+  );
+  const coverageU = mPerU ? coverageRadiusM / mPerU : null;
+
   // sizes that stay visually constant regardless of zoom
   const u = view.w / 900;
   const dot = 5 * u, line = 2 * u, font = 15 * u;
@@ -327,9 +412,9 @@ export default function FloorPlan({
         <div className="section-h">Building plan → geometry</div>
         <div className="card">
           <p className="muted" style={{ marginBottom: 14 }}>
-            Upload a plan image and trace each room to capture its real floor area — used for future
-            geometry-aware sizing (cable runs, AP coverage). DXF plans are read automatically via
-            <strong> Import plan</strong>.
+            Upload a plan image and trace each room to capture its real floor area — then turn on the
+            <strong> Design overlay</strong> to place devices and cabling on the plan. DXF plans are read
+            automatically via <strong>Import plan</strong>.
           </p>
           <label className="upload-btn">
             <input type="file" accept=".png,.jpg,.jpeg,.dxf" onChange={onFile} disabled={busy} hidden />
@@ -342,6 +427,17 @@ export default function FloorPlan({
   }
 
   const draftClosable = mode === "trace" && draft.length >= 3;
+  const modes: Mode[] = showDesign ? ["pan"] : geoOnly ? ["pan", "trace"] : ["pan", "scale", "trace"];
+
+  // colored chip marker (IDF / device): filled with its colour, white icon + label
+  const chip = (key: string, x: number, y: number, w: number, color: string, icon: string, label: string,
+    kind: "idf" | "device", id: string) => (
+    <g key={key} transform={`translate(${x - w / 2},${y - 9 * u})`} onPointerDown={(e) => startItemDrag(e, kind, id)} style={{ cursor: "grab" }}>
+      <rect width={w} height={18 * u} rx={4 * u} fill={color} stroke="#ffffff" strokeWidth={line * 0.4} />
+      <svg x={4 * u} y={3 * u} width={12 * u} height={12 * u} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">{ICONS[icon]}</svg>
+      <text x={18 * u} y={12.8 * u} fontSize={11 * u} fontWeight={800} fill="#ffffff">{label}</text>
+    </g>
+  );
 
   return (
     <div>
@@ -350,7 +446,7 @@ export default function FloorPlan({
       {/* toolbar */}
       <div className="plan-toolbar">
         <div className="seg">
-          {(geoOnly ? (["pan", "trace"] as Mode[]) : (["pan", "scale", "trace"] as Mode[])).map((m) => (
+          {modes.map((m) => (
             <button
               key={m}
               className={`seg-btn ${mode === m ? "active" : ""}`}
@@ -363,30 +459,62 @@ export default function FloorPlan({
           ))}
         </div>
 
-        <span className={`scale-chip ${scale || geoOnly ? "ok" : "warn"}`}>
-          <Icon name="ruler" size={13} /> {scale ? `1 px = ${scale.toFixed(4)} m` : geoOnly ? "CAD geometry (real m²)" : "No scale set"}
-        </span>
+        {hasAnyPolys && (
+          <button className={`btn btn-sm ${showDesign ? "btn-primary" : "btn-ghost"}`} onClick={toggleDesign} title="Overlay the network design on the plan">
+            <Icon name="zap" size={14} /> Design overlay
+          </button>
+        )}
+        {showDesign && (
+          <button className="btn btn-ghost btn-sm" onClick={regenerateLayout} title="Re-run auto-placement (discards manual moves on this floor)">
+            <Icon name="refresh" size={14} /> Re-generate
+          </button>
+        )}
+
+        {!showDesign && (
+          <span className={`scale-chip ${scale || geoOnly ? "ok" : "warn"}`}>
+            <Icon name="ruler" size={13} /> {scale ? `1 px = ${scale.toFixed(4)} m` : geoOnly ? "CAD geometry (real m²)" : "No scale set"}
+          </span>
+        )}
 
         <div className="spacer" />
 
-        {assets.filter((a) => a.kind !== "dxf").length > 1 && (
+        {!showDesign && assets.filter((a) => a.kind !== "dxf").length > 1 && (
           <select className="plan-select" value={assetId ?? ""} onChange={(e) => setAssetId(Number(e.target.value))}>
             {assets.filter((a) => a.kind !== "dxf").map((a) => (
               <option key={a.id} value={a.id}>{a.filename}</option>
             ))}
           </select>
         )}
-        <label className="btn btn-ghost btn-sm" style={{ cursor: "pointer" }}>
-          <input type="file" accept=".png,.jpg,.jpeg,.dxf" onChange={onFile} disabled={busy} hidden />
-          <Icon name="upload" size={14} /> New plan
-        </label>
-        <button className="btn btn-primary btn-sm" onClick={saveGeometry} disabled={busy || !dirty}>
-          <Icon name="save" size={14} /> {busy ? "Saving…" : dirty ? "Save geometry" : "Saved"}
+        {!showDesign && (
+          <label className="btn btn-ghost btn-sm" style={{ cursor: "pointer" }}>
+            <input type="file" accept=".png,.jpg,.jpeg,.dxf" onChange={onFile} disabled={busy} hidden />
+            <Icon name="upload" size={14} /> New plan
+          </label>
+        )}
+        <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || (!dirty && !placementDirty)}>
+          <Icon name="save" size={14} /> {busy ? "Saving…" : (dirty || placementDirty) ? (showDesign ? "Save layout" : "Save geometry") : "Saved"}
         </button>
       </div>
 
-      {/* mode hint / scale input */}
-      {mode === "scale" && (
+      {/* hints */}
+      {showDesign && (
+        <div className="plan-hint" style={{ gap: 12 }}>
+          {placement && (placement.aps.length || placement.devices.length || placement.idfs.length) ? (
+            <>
+              <span>Auto-placed — drag any marker to reposition; cables re-route to the nearest closet.</span>
+              <span className="legend"><span className="lg-dot" style={{ background: PALETTE.cyan }} /> AP</span>
+              <span className="legend"><span className="lg-dot" style={{ background: PALETTE.indigo }} /> IDF</span>
+              <span className="legend"><span className="lg-dot" style={{ background: ROLE_COLORS.workstations }} /> WS</span>
+              <span className="legend"><span className="lg-dot" style={{ background: ROLE_COLORS.printers }} /> Printer</span>
+              <span className="legend"><span className="lg-dot" style={{ background: ROLE_COLORS.cameras }} /> Camera</span>
+              <span className="legend"><span className="lg-dot" style={{ background: ROLE_COLORS.servers }} /> Server</span>
+            </>
+          ) : (
+            <span>No traced rooms on this floor — trace rooms first, then the design can be placed on them.</span>
+          )}
+        </div>
+      )}
+      {!showDesign && mode === "scale" && (
         <div className="plan-hint">
           {draft.length < 2 ? (
             <>Click two points along something of known length (a wall, a scale bar), then enter its length.</>
@@ -403,7 +531,7 @@ export default function FloorPlan({
           )}
         </div>
       )}
-      {mode === "trace" && (
+      {!showDesign && mode === "trace" && (
         <div className="plan-hint">
           {!activeRoom ? <>Pick a room on the right, then click to drop each corner.</>
             : <>Tracing <strong>{floor.rooms.find((r) => r.id === activeRoom)?.name}</strong> — click each corner; click the first point (or “Finish”) to close.
@@ -415,7 +543,7 @@ export default function FloorPlan({
 
       <div className="plan-layout">
         {/* canvas */}
-        <div className={`plan-canvas mode-${mode}`}>
+        <div className={`plan-canvas mode-${showDesign ? "pan" : mode}`}>
           <svg
             ref={svgRef}
             viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
@@ -428,7 +556,7 @@ export default function FloorPlan({
           >
             {imgUrl && <image href={imgUrl} x={0} y={0} width={img?.w} height={img?.h} />}
 
-            {/* saved polygons */}
+            {/* room polygons (dimmed under the design overlay) */}
             {floor.rooms.map((r) => {
               const p = polys[r.id];
               if (!p) return null;
@@ -439,18 +567,69 @@ export default function FloorPlan({
                 <g key={r.id}>
                   <polygon
                     points={p.map((pt) => pt.join(",")).join(" ")}
-                    fill={active ? "rgba(96,165,250,0.28)" : "rgba(96,165,250,0.14)"}
-                    stroke={active ? "#60a5fa" : "#3b82f6"}
+                    fill={showDesign ? "rgba(96,165,250,0.05)" : active ? "rgba(96,165,250,0.28)" : "rgba(96,165,250,0.14)"}
+                    stroke={showDesign ? "rgba(96,165,250,0.4)" : active ? "#60a5fa" : "#3b82f6"}
                     strokeWidth={line}
                     strokeLinejoin="round"
                   />
-                  <text x={cx} y={cy} fontSize={font} fill="#e5edff" textAnchor="middle"
-                    stroke="#0b1220" strokeWidth={font * 0.14} paintOrder="stroke" style={{ pointerEvents: "none" }}>
-                    {r.name}{a != null ? ` · ${a.toFixed(1)} m²` : ""}
-                  </text>
+                  {!showDesign && (
+                    <text x={cx} y={cy} fontSize={font} fill="#e5edff" textAnchor="middle"
+                      stroke="#0b1220" strokeWidth={font * 0.14} paintOrder="stroke" style={{ pointerEvents: "none" }}>
+                      {r.name}{a != null ? ` · ${a.toFixed(1)} m²` : ""}
+                    </text>
+                  )}
                 </g>
               );
             })}
+
+            {/* ── design overlay ── */}
+            {showDesign && placement && (
+              <g>
+                {/* cable runs: each AP + device → nearest IDF */}
+                {[
+                  ...placement.aps.map((it) => ({ it, color: PALETTE.cyan })),
+                  ...placement.devices.map((it) => ({ it, color: ROLE_COLORS[it.kind] })),
+                ].map(({ it, color }, i) => {
+                  const idf = nearestIdf([it.x, it.y], placement.idfs);
+                  if (!idf) return null;
+                  const len = mPerU ? pdist([it.x, it.y], [idf.x, idf.y]) * mPerU : null;
+                  return (
+                    <g key={`cbl-${i}`}>
+                      <line x1={it.x} y1={it.y} x2={idf.x} y2={idf.y} stroke={color} strokeWidth={line * 0.6} strokeOpacity={0.45} style={{ pointerEvents: "none" }} />
+                      {len != null && (
+                        <text x={(it.x + idf.x) / 2} y={(it.y + idf.y) / 2} fontSize={font * 0.55} fill={color}
+                          textAnchor="middle" stroke="#0b1220" strokeWidth={font * 0.08} paintOrder="stroke" style={{ pointerEvents: "none" }}>
+                          {Math.round(len)} m
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
+
+                {/* AP coverage circles */}
+                {coverageU != null && placement.aps.map((a) => (
+                  <circle key={`cov-${a.id}`} cx={a.x} cy={a.y} r={coverageU}
+                    fill="rgba(34,211,238,0.10)" stroke="rgba(34,211,238,0.55)" strokeWidth={line * 0.5}
+                    strokeDasharray={`${line * 1.5} ${line * 1.5}`} style={{ pointerEvents: "none" }} />
+                ))}
+
+                {/* device markers */}
+                {placement.devices.map((d) =>
+                  chip(d.id, d.x, d.y, 30 * u, ROLE_COLORS[d.kind], ICON_FOR[d.kind], String(d.count), "device", d.id))}
+
+                {/* IDFs */}
+                {placement.idfs.map((idf) =>
+                  chip(idf.id, idf.x, idf.y, 42 * u, PALETTE.indigo, "server", "IDF", "idf", idf.id))}
+
+                {/* APs (cyan dot + wifi glyph) */}
+                {placement.aps.map((a) => (
+                  <g key={a.id} onPointerDown={(e) => startItemDrag(e, "ap", a.id)} style={{ cursor: "grab" }}>
+                    <circle cx={a.x} cy={a.y} r={7 * u} fill={PALETTE.cyan} stroke="#ffffff" strokeWidth={line * 0.5} />
+                    <svg x={a.x - 5 * u} y={a.y - 5 * u} width={10 * u} height={10 * u} viewBox="0 0 24 24" fill="none" stroke="#0b1220" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">{ICONS["wifi"]}</svg>
+                  </g>
+                ))}
+              </g>
+            )}
 
             {/* in-progress trace */}
             {mode === "trace" && draft.length > 0 && (
@@ -478,7 +657,7 @@ export default function FloorPlan({
           </svg>
         </div>
 
-        {/* room list */}
+        {/* side panel */}
         <aside className="plan-rooms">
           <div className="pr-head">
             {project.floors.length > 1 && (
@@ -489,30 +668,53 @@ export default function FloorPlan({
             )}
             <span className="badge badge-blue">{tracedCount}/{floor.rooms.length} traced</span>
           </div>
-          <div className="pr-list">
-            {floor.rooms.map((r: Room) => {
-              const a = shownArea(r);
-              const has = !!polys[r.id];
-              return (
-                <div key={r.id} className={`pr-item ${r.id === activeRoom ? "active" : ""}`}>
-                  <button className="pr-main" onClick={() => startTrace(r.id)} title="Trace this room">
-                    <span className={`pr-dot ${has ? "on" : ""}`} />
-                    <span className="pr-name">{r.name}</span>
-                    <span className="pr-area">{has ? (a != null ? `${a.toFixed(1)} m²` : "no scale") : "—"}</span>
-                  </button>
-                  {has && (
-                    <button className="pr-clear" onClick={() => clearRoom(r.id)} title="Clear polygon">
-                      <Icon name="x" size={13} />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {!scale && !geoOnly && (
-            <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-              Tip: use <strong>Set scale</strong> before tracing so areas come out in real metres.
-            </p>
+
+          {showDesign ? (
+            <div className="pr-list" style={{ fontSize: 13 }}>
+              {(() => {
+                const df = design.floors.find((d) => d.id === floor.id) ?? design.floors[activeFloor];
+                if (!df) return <p className="muted">No design for this floor.</p>;
+                const rows: [string, number | string][] = [
+                  ["Access points", df.aps],
+                  ["Wiring closets (IDF)", df.idfCount],
+                  ["Switch", df.switchCount > 0 ? `${df.switchSize}-port` : "—"],
+                  ["Est. cable", df.cableM ? `${df.cableM.toLocaleString()} m` : "—"],
+                ];
+                return rows.map(([l, v]) => (
+                  <div key={l} className="row-between" style={{ padding: "5px 2px" }}>
+                    <span className="muted">{l}</span><span style={{ fontWeight: 700 }}>{v}</span>
+                  </div>
+                ));
+              })()}
+            </div>
+          ) : (
+            <>
+              <div className="pr-list">
+                {floor.rooms.map((r: Room) => {
+                  const a = shownArea(r);
+                  const has = !!polys[r.id];
+                  return (
+                    <div key={r.id} className={`pr-item ${r.id === activeRoom ? "active" : ""}`}>
+                      <button className="pr-main" onClick={() => startTrace(r.id)} title="Trace this room">
+                        <span className={`pr-dot ${has ? "on" : ""}`} />
+                        <span className="pr-name">{r.name}</span>
+                        <span className="pr-area">{has ? (a != null ? `${a.toFixed(1)} m²` : "no scale") : "—"}</span>
+                      </button>
+                      {has && (
+                        <button className="pr-clear" onClick={() => clearRoom(r.id)} title="Clear polygon">
+                          <Icon name="x" size={13} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {!scale && !geoOnly && (
+                <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+                  Tip: use <strong>Set scale</strong> before tracing so areas come out in real metres.
+                </p>
+              )}
+            </>
           )}
         </aside>
       </div>

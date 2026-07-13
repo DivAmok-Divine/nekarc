@@ -23,6 +23,7 @@ class RoomOut(RoomIn):
 class FloorIn(BaseModel):
     name: str = "Floor 1"
     order_index: int = 0
+    placement_json: Optional[str] = None
     rooms: list[RoomIn] = []
 
 
@@ -31,6 +32,7 @@ class FloorOut(BaseModel):
     id: int
     name: str
     order_index: int
+    placement_json: Optional[str] = None
     rooms: list[RoomOut] = []
 
 

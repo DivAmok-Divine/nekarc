@@ -20,7 +20,7 @@ def _apply_floors(project: Project, floors: list[FloorIn]) -> None:
     """Replace-all strategy — matches the load/save-whole-project model."""
     project.floors.clear()
     for fi, f in enumerate(floors):
-        floor = Floor(name=f.name, order_index=f.order_index or fi)
+        floor = Floor(name=f.name, order_index=f.order_index or fi, placement_json=f.placement_json)
         for r in f.rooms:
             floor.rooms.append(
                 Room(

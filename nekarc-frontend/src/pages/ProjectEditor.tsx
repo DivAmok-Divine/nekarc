@@ -69,6 +69,7 @@ function fromServer(p: any): Project {
       id: String(f.id ?? uid()),
       name: f.name,
       order_index: f.order_index ?? fi,
+      placement_json: f.placement_json ?? null,
       rooms: (f.rooms || []).map((r: any) => ({
         id: String(r.id ?? uid()),
         name: r.name,
@@ -90,6 +91,7 @@ function toPayload(p: Project) {
     floors: p.floors.map((f, i) => ({
       name: f.name,
       order_index: i,
+      placement_json: f.placement_json ?? null,
       rooms: f.rooms.map((r) => ({
         name: r.name,
         workstations: r.workstations,
@@ -369,6 +371,7 @@ export default function ProjectEditor() {
             <div className="floor-head">
               <span className="floor-ico"><Icon name="building" size={18} /></span>
               <input ref={floorNameRef} type="text" className="floor-name-input" value={floor.name} onChange={(e) => update((p) => { p.floors[activeFloor].name = e.target.value; })} />
+              <div className="spacer" />
               <button className="btn btn-ghost btn-sm" onClick={addRoom}><Icon name="plus" size={15} /> Add Room</button>
               <button
                 className="btn btn-ghost btn-sm"

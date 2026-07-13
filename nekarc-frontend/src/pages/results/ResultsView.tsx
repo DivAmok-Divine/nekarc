@@ -130,7 +130,7 @@ export default function ResultsView({
             <Diagram design={design} projectName={project.name} />
           </Suspense>
         )}
-        {tab === "floorplan" && <FloorPlan project={project} projectId={projectId} onProjectChange={onProjectChange} />}
+        {tab === "floorplan" && <FloorPlan project={project} projectId={projectId} design={design} onProjectChange={onProjectChange} />}
         {tab === "bom" && <Bom design={design} />}
         {tab === "ip" && <Ip design={design} />}
         {tab === "vlans" && <Vlans design={design} />}

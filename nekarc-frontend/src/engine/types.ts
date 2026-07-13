@@ -16,6 +16,7 @@ export interface Floor {
   name: string;
   order_index: number;
   rooms: Room[];
+  placement_json?: string | null; // physical device layout on the plan
 }
 
 export interface Project {
