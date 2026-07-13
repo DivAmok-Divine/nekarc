@@ -1,0 +1,16 @@
+.venv
+venv
+__pycache__
+**/__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+# never bake local state or secrets into the image
+data
+.env
+.env.*
+!.env.example
+.git
+Dockerfile
+.dockerignore
+README*

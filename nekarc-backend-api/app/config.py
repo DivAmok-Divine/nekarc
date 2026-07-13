@@ -39,5 +39,11 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
+    @property
+    def db_url(self) -> str:
+        # Neon/Heroku hand out `postgres://`; SQLAlchemy 2.0 needs `postgresql://`.
+        url = self.DATABASE_URL
+        return "postgresql://" + url[len("postgres://"):] if url.startswith("postgres://") else url
+
 
 settings = Settings()

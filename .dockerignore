@@ -1,0 +1,16 @@
+**/node_modules
+**/.venv
+venv
+**/__pycache__
+**/*.py[cod]
+**/dist
+**/.vite
+nekarc-backend-api/data
+**/.env
+**/.env.*
+!**/.env.example
+.git
+.run
+*.log
+.DS_Store
+test_plans
