@@ -9,6 +9,7 @@ import Icon from "../components/Icon";
 import { useConfirm } from "../components/confirm";
 import ImportPlanModal, { type ImportFloor, type ImportResult } from "../components/ImportPlanModal";
 import { ROLE_COLORS } from "../theme/colors";
+import { pdfToImage } from "../lib/pdfToImage";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const newRoom = (n: number): Room => ({
@@ -292,7 +293,13 @@ export default function ProjectEditor() {
   }
 
   async function applyImport(floors: ImportFloor[]) {
-    const file = lastImportFile.current;
+    let file = lastImportFile.current;
+    // A PDF can't be a canvas background — render its first page to an image so it
+    // behaves like a photo import (shown, measured for boxes, reused, no re-upload).
+    if (file && /\.pdf$/i.test(file.name)) {
+      const png = await pdfToImage(file);
+      if (png) file = png;
+    }
     // Photo/PNG imports: fold the AI's per-room boxes into real polygons (needs the image size).
     const needDims = isImageFile(file?.name) && floors.some((f) => f.rooms.some((r) => r.box?.length === 4));
     const dims = needDims && file ? await imageDims(file) : null;
