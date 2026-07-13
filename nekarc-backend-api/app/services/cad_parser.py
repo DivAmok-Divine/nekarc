@@ -50,6 +50,61 @@ def _empty_counts() -> dict:
     return {k: 0 for k in DEVICE_KEYS}
 
 
+def _wall_segments(msp) -> list:
+    """Every straight wall segment in the drawing as ((x1,y1),(x2,y2)) — from
+    LINEs and (open or closed) poly-lines. Used to rebuild rooms when a plan
+    draws walls as loose segments rather than closed room polylines."""
+    segs: list = []
+    for e in msp.query("LINE"):
+        try:
+            a, b = e.dxf.start, e.dxf.end
+            segs.append(((float(a[0]), float(a[1])), (float(b[0]), float(b[1]))))
+        except Exception:  # noqa: BLE001
+            continue
+    for e in msp.query("LWPOLYLINE"):
+        try:
+            pts = [(float(p[0]), float(p[1])) for p in e.get_points("xy")]
+        except Exception:  # noqa: BLE001
+            continue
+        if e.closed and len(pts) >= 3:
+            pts = pts + [pts[0]]
+        segs += [(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
+    for e in msp.query("POLYLINE"):
+        try:
+            pts = [(float(v.dxf.location[0]), float(v.dxf.location[1])) for v in e.vertices]
+        except Exception:  # noqa: BLE001
+            continue
+        segs += [(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
+    return segs
+
+
+def _rooms_from_walls(msp, scale: float) -> list:
+    """Reconstruct rooms as the closed faces enclosed by wall segments.
+
+    unary_union nodes the segments at every intersection; polygonize then finds
+    the minimal enclosed faces. Area-filtered like the closed-polyline path to
+    drop slivers (wall thickness) and page borders.
+    """
+    from shapely.geometry import LineString
+    from shapely.ops import polygonize, unary_union
+
+    segs = [(a, b) for (a, b) in _wall_segments(msp) if a != b]
+    if len(segs) < 3:
+        return []
+    faces = polygonize(unary_union([LineString([a, b]) for (a, b) in segs]))
+
+    rooms = []
+    for poly in faces:
+        if not poly.is_valid or poly.area <= 0:
+            continue
+        area_m2 = poly.area * scale * scale
+        if not (1.0 <= area_m2 <= 20000):
+            continue
+        rooms.append({"layer": "", "poly": poly, "area_m2": round(area_m2, 1),
+                      "name": None, "counts": _empty_counts()})
+    return rooms
+
+
 def parse_dxf(path: str) -> dict:
     try:
         import ezdxf
@@ -94,9 +149,14 @@ def parse_dxf(path: str) -> dict:
         rooms.append({"layer": e.dxf.layer, "poly": poly, "area_m2": round(area_m2, 1),
                       "name": None, "counts": _empty_counts()})
 
+    # Fallback: no closed room polylines — rebuild rooms from wall segments.
     if not rooms:
-        return {"ok": True, "source": "dxf", "floors": [],
-                "warnings": warnings + ["No closed room polygons were found in this DXF."]}
+        rooms = _rooms_from_walls(msp, scale)
+        if rooms:
+            warnings.append(f"No closed room polylines; reconstructed {len(rooms)} room(s) from wall segments.")
+        else:
+            return {"ok": True, "source": "dxf", "floors": [],
+                    "warnings": warnings + ["No rooms found (no closed polylines or enclosed wall loops)."]}
 
     # ── names from TEXT/MTEXT inside a room ──
     labels = []

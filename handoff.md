@@ -57,8 +57,10 @@ Dev proxy: Vite forwards `/api/*` → `:3333` (see `nekarc-frontend/vite.config.
 2. **CAD parsing depth:** `parse_dxf` now returns per-room `polygon` coordinates (normalized to a
    top-left/y-down display space) — the DXF import carries these to rooms as `polygon_json`, so CAD plans
    are geometry-aware and render on the canvas's geometry-only view (no background image needed).
-   *Still open:* `cad_parser.py` reads closed LWPOLYLINEs only — add wall-segment closed-loop room
-   detection for messy exports that don't use closed polylines.
+   **Also DONE (2026-07-13):** when a plan has no closed room polylines, `parse_dxf` falls back to
+   `_rooms_from_walls` — shapely `unary_union` + `polygonize` rebuild rooms from loose wall segments
+   (LINE / open poly-lines), area-filtered, with a warning noting reconstruction. Arcs/curved walls are
+   not yet handled (straight segments only).
 3. ~~**Diagram upgrade**~~ **DONE (2026-07-12).** `src/pages/results/Diagram.tsx` now uses **@xyflow/react**
    (v12): custom `DeviceNode` cards, hierarchical layout (router → core → floor switches → endpoints),
    pan/zoom/drag, Controls + MiniMap + Background, and `colorMode` bound to the app theme. Lazy-loaded via
