@@ -404,6 +404,7 @@ export default function FloorPlan({
   // sizes that stay visually constant regardless of zoom
   const u = view.w / 900;
   const dot = 5 * u, line = 2 * u, font = 15 * u;
+  const mu = view.w / 460; // larger unit for design-overlay markers (~2× the trace unit)
 
   // ── nothing to show yet (no image and no traced geometry): upload prompt ──
   if (!imgUrl && !hasAnyPolys) {
@@ -432,10 +433,10 @@ export default function FloorPlan({
   // colored chip marker (IDF / device): filled with its colour, white icon + label
   const chip = (key: string, x: number, y: number, w: number, color: string, icon: string, label: string,
     kind: "idf" | "device", id: string) => (
-    <g key={key} transform={`translate(${x - w / 2},${y - 9 * u})`} onPointerDown={(e) => startItemDrag(e, kind, id)} style={{ cursor: "grab" }}>
-      <rect width={w} height={18 * u} rx={4 * u} fill={color} stroke="#ffffff" strokeWidth={line * 0.4} />
-      <svg x={4 * u} y={3 * u} width={12 * u} height={12 * u} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">{ICONS[icon]}</svg>
-      <text x={18 * u} y={12.8 * u} fontSize={11 * u} fontWeight={800} fill="#ffffff">{label}</text>
+    <g key={key} transform={`translate(${x - w / 2},${y - 11 * mu})`} onPointerDown={(e) => startItemDrag(e, kind, id)} style={{ cursor: "grab" }}>
+      <rect width={w} height={22 * mu} rx={5 * mu} fill={color} stroke="#ffffff" strokeWidth={mu * 0.9} />
+      <svg x={5 * mu} y={4 * mu} width={14 * mu} height={14 * mu} viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">{ICONS[icon]}</svg>
+      <text x={22 * mu} y={16 * mu} fontSize={13 * mu} fontWeight={800} fill="#ffffff">{label}</text>
     </g>
   );
 
@@ -595,10 +596,10 @@ export default function FloorPlan({
                   const len = mPerU ? pdist([it.x, it.y], [idf.x, idf.y]) * mPerU : null;
                   return (
                     <g key={`cbl-${i}`}>
-                      <line x1={it.x} y1={it.y} x2={idf.x} y2={idf.y} stroke={color} strokeWidth={line * 0.6} strokeOpacity={0.45} style={{ pointerEvents: "none" }} />
+                      <line x1={it.x} y1={it.y} x2={idf.x} y2={idf.y} stroke={color} strokeWidth={mu * 1.6} strokeOpacity={0.7} style={{ pointerEvents: "none" }} />
                       {len != null && (
-                        <text x={(it.x + idf.x) / 2} y={(it.y + idf.y) / 2} fontSize={font * 0.55} fill={color}
-                          textAnchor="middle" stroke="#0b1220" strokeWidth={font * 0.08} paintOrder="stroke" style={{ pointerEvents: "none" }}>
+                        <text x={(it.x + idf.x) / 2} y={(it.y + idf.y) / 2} fontSize={12 * mu} fill={color}
+                          textAnchor="middle" stroke="#0b1220" strokeWidth={mu * 2} paintOrder="stroke" style={{ pointerEvents: "none" }}>
                           {Math.round(len)} m
                         </text>
                       )}
@@ -609,23 +610,23 @@ export default function FloorPlan({
                 {/* AP coverage circles */}
                 {coverageU != null && placement.aps.map((a) => (
                   <circle key={`cov-${a.id}`} cx={a.x} cy={a.y} r={coverageU}
-                    fill="rgba(34,211,238,0.10)" stroke="rgba(34,211,238,0.55)" strokeWidth={line * 0.5}
-                    strokeDasharray={`${line * 1.5} ${line * 1.5}`} style={{ pointerEvents: "none" }} />
+                    fill="rgba(34,211,238,0.10)" stroke="rgba(34,211,238,0.55)" strokeWidth={mu * 0.6}
+                    strokeDasharray={`${mu * 2} ${mu * 2}`} style={{ pointerEvents: "none" }} />
                 ))}
 
                 {/* device markers */}
                 {placement.devices.map((d) =>
-                  chip(d.id, d.x, d.y, 30 * u, ROLE_COLORS[d.kind], ICON_FOR[d.kind], String(d.count), "device", d.id))}
+                  chip(d.id, d.x, d.y, 40 * mu, ROLE_COLORS[d.kind], ICON_FOR[d.kind], String(d.count), "device", d.id))}
 
                 {/* IDFs */}
                 {placement.idfs.map((idf) =>
-                  chip(idf.id, idf.x, idf.y, 42 * u, PALETTE.indigo, "server", "IDF", "idf", idf.id))}
+                  chip(idf.id, idf.x, idf.y, 54 * mu, PALETTE.indigo, "server", "IDF", "idf", idf.id))}
 
                 {/* APs (cyan dot + wifi glyph) */}
                 {placement.aps.map((a) => (
                   <g key={a.id} onPointerDown={(e) => startItemDrag(e, "ap", a.id)} style={{ cursor: "grab" }}>
-                    <circle cx={a.x} cy={a.y} r={7 * u} fill={PALETTE.cyan} stroke="#ffffff" strokeWidth={line * 0.5} />
-                    <svg x={a.x - 5 * u} y={a.y - 5 * u} width={10 * u} height={10 * u} viewBox="0 0 24 24" fill="none" stroke="#0b1220" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">{ICONS["wifi"]}</svg>
+                    <circle cx={a.x} cy={a.y} r={11 * mu} fill={PALETTE.cyan} stroke="#ffffff" strokeWidth={mu} />
+                    <svg x={a.x - 7 * mu} y={a.y - 7 * mu} width={14 * mu} height={14 * mu} viewBox="0 0 24 24" fill="none" stroke="#0b1220" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">{ICONS["wifi"]}</svg>
                   </g>
                 ))}
               </g>
