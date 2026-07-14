@@ -15,7 +15,7 @@
 
 ---
 
-## What it is
+## What it is?
 
 **nekarc** (Network Architect) turns a simple building description — floors → rooms → device counts —
 into a full network design: a topology diagram, a bill of materials, an IP plan, a VLAN scheme, and a
